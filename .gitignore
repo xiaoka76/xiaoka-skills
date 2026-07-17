@@ -245,3 +245,6 @@ System Volume Information/
 *~
 .directory
 lost+found/
+
+# Project-specific
+seedream-output/

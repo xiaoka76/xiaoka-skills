@@ -51,10 +51,14 @@ cd scripts
 python generate.py -p "一只可爱的猫坐在窗台上，阳光洒进来" --size 2K
 ```
 
-### 图生图
+### 图生图（URL 或本地路径）
 
 ```bash
-python generate.py -p "把这张照片转换成动漫风格" --image "https://example.com/photo.jpg" --size 2K
+# 网络 URL
+python generate.py -p "把这张照片转换成动漫风格" --images "https://example.com/photo.jpg" --size 2K
+
+# 本地路径（自动编码为 Base64）
+python generate.py -p "把这张照片转换成动漫风格" --images "./photo.jpg" --size 2K
 ```
 
 ### 多图融合
@@ -74,7 +78,7 @@ python generate.py \
 ### 交互编辑 - 点选
 
 ```bash
-python generate.py -p "把图1<point>520 460</point>位置换成皇冠" --image "https://example.com/img.jpg"
+python generate.py -p "把图1<point>520 460</point>位置换成皇冠" --images "https://example.com/img.jpg"
 ```
 
 ### 交互编辑 - 任意标记
@@ -82,7 +86,7 @@ python generate.py -p "把图1<point>520 460</point>位置换成皇冠" --image 
 ```bash
 python generate.py \
   -p "根据手绘草图对图像进行编辑。在左下角标记区域添加一叠杂志。移除所有草图线条。保持构图不变。" \
-  --image "https://example.com/marked.png"
+  --images "https://example.com/marked.png"
 ```
 
 ### 快速模式
@@ -108,35 +112,30 @@ python generate.py -p "..." --output-dir ./my-images
 | 参数 | 简写 | 说明 | 默认 |
 |------|------|------|------|
 | `--prompt` | `-p` | 提示词 / 编辑指令（必填） | - |
-| `--image` | `-i` | 单张参考图 URL | - |
-| `--images` | - | 多张参考图 URL（最多 10 张） | - |
+| `--images` | - | 参考图 URL 或本地路径（1 张或多张，最多 10 张） | - |
 | `--size` | `-s` | 分辨率档位或宽x高 | `2K` |
 | `--output-format` | - | 输出格式：`png` / `jpeg` | `jpeg` |
 | `--output-dir` | - | 图片保存目录 | `seedream-output` |
-| `--no-watermark` | - | 关闭水印 | 水印开启 |
-| `--optimize` | - | 提示词优化：`standard` / `fast` | 不优化 |
+| `--watermark` | - | 启用水印 | 关闭 |
+| `--optimize` | - | 提示词优化：`standard` / `fast` | `standard` |
 | `--timeout` | `-t` | API 超时（秒） | `300` |
-| `--json` | - | JSON 格式输出 | 文本输出 |
 
 ## Python API
 
 ```python
-import asyncio
 import sys
 
 sys.path.append("scripts")
 from generate import single_generate
 
-async def main():
-    result = await single_generate({
-        "prompt": "一只可爱的猫坐在窗台上",
-        "size": "2K",
-        "output_format": "png",
-        "watermark": False,
-    })
-    print(f"图片已保存: {result['image_path']}")
-
-asyncio.run(main())
+result = single_generate({
+    "prompt": "一只可爱的猫坐在窗台上",
+    "size": "2K",
+    "output_format": "png",
+    "watermark": False,
+})
+print(f"图片已保存: {result['image_path']}")
+print(f"元数据: {result['metadata_path']}")
 ```
 
 ### 坐标转换工具
@@ -274,17 +273,18 @@ python generate.py -p "生成一张高仿真的直播带货截图风格视觉图
 ```json
 {
   "status": "success",
-  "image_path": "/app/workspace/seedream-output/a-cute-cat-20260717-123456.jpg",
-  "all_images": ["/app/workspace/seedream-output/a-cute-cat-20260717-123456.jpg"],
+  "image_path": "/app/workspace/seedream-output/a1b2c3d4e5f6.jpg",
+  "metadata_path": "/app/workspace/seedream-output/a1b2c3d4e5f6.md",
   "model": "doubao-seedream-5-0-pro-260628",
   "output_dir": "/app/workspace/seedream-output",
   "error": null
 }
 ```
 
-### 文件名规则
+### 文件命名规则
 
-`{prompt前8个词}-{时间戳}.{扩展名}`，自动生成，不会重名。
+- 图片: `{uuid前12位}.{扩展名}`（如 `a1b2c3d4e5f6.jpg`）
+- 元数据: `{uuid前12位}.md`（如 `a1b2c3d4e5f6.md`），包含提示词、模型、尺寸、参数等完整信息
 
 
 

@@ -72,6 +72,10 @@ export ARK_API_KEY="your-api-key"
 python skills/seedream5pro-image/scripts/generate.py --prompt "一只橘猫" --size 2K
 ```
 
+## 输出目录
+
+图像生成脚本默认将图片和元数据文件保存到项目根目录下的 `seedream-output/` 目录。该目录已被加入 `.gitignore`，不会提交到版本控制。
+
 ## 添加新技能
 
 要添加新技能，请创建以下目录结构：

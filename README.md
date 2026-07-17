@@ -58,16 +58,16 @@ python skills/seedream5pro-image/scripts/generate.py \
     --prompt "一只橘猫坐在窗台上，午后阳光" \
     --size 2K
 
-# 图生图（基于参考图生成）
+# 图生图（URL 或本地路径）
 python skills/seedream5pro-image/scripts/generate.py \
     --prompt "把这只猫放在日式庭院里" \
-    --image "https://example.com/cat.jpg" \
+    --images "https://example.com/cat.jpg" \
     --size 1K
 
 # 交互编辑（使用坐标定位）
 python skills/seedream5pro-image/scripts/generate.py \
     --prompt "把 <bbox>(100,200,300,400)</bbox> 区域中的狗换成猫" \
-    --image "https://example.com/photo.jpg"
+    --images "https://example.com/photo.jpg"
 ```
 
 详细用法请参阅 [SKILL.md](skills/seedream5pro-image/SKILL.md)。
