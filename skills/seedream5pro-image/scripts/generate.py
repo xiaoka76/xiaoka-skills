@@ -6,7 +6,7 @@ Seedream 5.0 Pro - 独立图像生成脚本
 支持文生图、图生图、交互编辑（<point>/<bbox>），自动保存到本地。
 
 用法:
-  python generate.py -p "一只猫" --version 5.0-pro
+  python generate.py -p "一只猫" --size 2K
   python generate.py -p "把图1<bbox>179 283 796 986</bbox>的主体放到图2<bbox>118 331 933 871</bbox>位置" --image "url1" --images "url2"
 """
 

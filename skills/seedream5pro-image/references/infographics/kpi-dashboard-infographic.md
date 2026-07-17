@@ -110,7 +110,7 @@
   },
   "footer": {
     "tagline": "{argument name=\"footer_tagline\" default=\"明年继续 📚\"}",
-    "credit": "{argument name=\"credit\" default=\"@your_handle · made with gpt-image-2\"}"
+    "credit": "{argument name=\"credit\" default=\"@your_handle · made with seedream5pro-image\"}"
   },
   "constraints": {
     "must_keep": [
