@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -34,8 +35,198 @@ from seedream.webui import create_app, init_session_global
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
+# ── size 参数校验 ─────────────────────────────────────────────────────────────
+
+_SIZE_PATTERN: re.Pattern[str] = re.compile(r"^(1K|2K|\d+x\d+)$")
+_MIN_PIXELS: int = 921600   # 1280x720
+_MAX_PIXELS: int = 4624220  # 2048x2048x1.1025
+
+
+def _validate_size(size: str) -> str:
+    """
+    校验 --size 参数合法性。
+
+    支持格式: "1K" / "2K" / "宽x高"（如 "2048x1024"）。
+    自定义像素需满足总像素 [921600, 4624220] 且宽高比 [1/16, 16]。
+
+    :param size: 用户输入的 size 字符串
+    :return: 校验通过的 size 字符串
+    :raises typer.Exit: 校验失败时退出
+    """
+    if not _SIZE_PATTERN.match(size):
+        typer.secho(
+            f"错误: 无效的分辨率格式 '{size}'，支持 1K / 2K / 宽x高（如 2048x1024）",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(1)
+
+    if size in ("1K", "2K"):
+        return size
+
+    # 自定义像素格式（正则已保证格式为 数字x数字，split 必然为 2 部分）
+    w_str, h_str = size.split("x")
+    w, h = int(w_str), int(h_str)
+    total = w * h
+    if total < _MIN_PIXELS or total > _MAX_PIXELS:
+        typer.secho(
+            f"错误: 总像素 {total} 不在有效范围 [{_MIN_PIXELS}, {_MAX_PIXELS}]",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(1)
+
+    ratio = w / h
+    if ratio < 1 / 16 or ratio > 16:
+        typer.secho(
+            f"错误: 宽高比 {ratio:.3f} 不在有效范围 [1/16, 16]",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(1)
+
+    return size
+
 
 # ── generate 子命令 ──────────────────────────────────────────────────────────
+
+
+def _generate_from_session(
+    session_path: str,
+    size: str,
+    output_format: str,
+    watermark: bool,
+    optimize: str,
+    timeout: int,
+) -> dict:
+    """从 session.json 执行图像生成。
+
+    :return: single_generate 的结果字典
+    """
+    if not os.path.exists(session_path):
+        typer.secho(f"错误: session 文件不存在: {session_path}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    try:
+        with open(session_path, "r", encoding="utf-8") as f:
+            session_data = json.load(f)
+    except json.JSONDecodeError as e:
+        typer.secho(f"错误: session 文件解析失败: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    if "prompt" not in session_data:
+        typer.secho("错误: session 文件中缺少 prompt 字段", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    data_urls = [
+        img["dataUrl"]
+        for img in session_data.get("images", [])
+        if img.get("dataUrl")
+    ]
+    resolved_images = list(data_urls)
+
+    session_path_obj = Path(session_path).resolve()
+    session_dir = session_path_obj.parent
+    output_dir = str(session_dir / "output")
+
+    typer.echo("  Seedream 5.0 Pro 图像生成（session 模式）")
+    typer.echo(f"  Session 文件: {session_path}")
+    prompt_text = session_data["prompt"]
+    typer.echo(f"  Prompt: {prompt_text[:80]}{'...' if len(prompt_text) > 80 else ''}")
+    if resolved_images:
+        typer.echo(f"  参考图: {len(resolved_images)} 张")
+    typer.echo(f"  输出目录: {output_dir}")
+    typer.echo("")
+
+    task: dict = {
+        "prompt": session_data["prompt"],
+        "size": size,
+        "output_format": output_format,
+        "watermark": watermark,
+    }
+    task["optimize_prompt_options"] = {"mode": optimize}
+    if resolved_images:
+        task["image"] = resolved_images if len(resolved_images) > 1 else resolved_images[0]
+
+    result = single_generate(task, timeout=timeout, output_dir=output_dir)
+    add_edit_session_output(session_path, result)
+    return result
+
+
+def _generate_from_prompt(
+    prompt: str,
+    images: list[str] | None,
+    size: str,
+    output_format: str,
+    watermark: bool,
+    optimize: str,
+    timeout: int,
+) -> tuple[dict, str]:
+    """从 prompt 执行图像生成。
+
+    :return: (result, output_dir) 元组
+    """
+    task: dict = {
+        "prompt": prompt,
+        "size": size,
+        "output_format": output_format,
+        "watermark": watermark,
+    }
+    task["optimize_prompt_options"] = {"mode": optimize}
+
+    if images:
+        if len(images) > MAX_REF_IMAGES:
+            typer.secho(f"错误: 最多支持 {MAX_REF_IMAGES} 张参考图", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+
+        resolved = []
+        for path in images:
+            try:
+                resolved.append(_resolve_image_path(path))
+            except (FileNotFoundError, ValueError) as e:
+                typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(1)
+
+        task["image"] = resolved if len(resolved) > 1 else resolved[0]
+
+    session_data, session_path = init_generate_session(task)
+    gen_session_id = session_data["session_id"]
+    output_dir = str(Path(DEFAULT_OUTPUT_DIR) / "generate" / gen_session_id / "output")
+
+    typer.echo("  Seedream 5.0 Pro 图像生成")
+    typer.echo(f"  会话 ID: {gen_session_id}")
+    typer.echo(f"  Session 文件: {session_path}")
+    typer.echo(f"  Prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
+    typer.echo(f"  Size: {size}")
+    typer.echo(f"  输出目录: {output_dir}")
+    typer.echo(f"  格式: {output_format}")
+    if images:
+        typer.echo(f"  参考图: {len(images)} 张")
+    if watermark:
+        typer.echo("  水印: 开启")
+    typer.echo(f"  优化模式: {optimize}")
+    typer.echo("")
+
+    update_generate_session(session_path, "running", {"error": None})
+    result = single_generate(task, timeout=timeout, output_dir=output_dir)
+
+    if result["status"] == "success":
+        update_generate_session(session_path, "success", result)
+    else:
+        update_generate_session(session_path, "error", result)
+
+    return result, output_dir
+
+
+def _print_result(result: dict) -> None:
+    """输出生成结果到终端。"""
+    if result["status"] == "success":
+        typer.secho("  生成成功!", fg=typer.colors.GREEN)
+        size_kb = os.path.getsize(result["image_path"]) / 1024 if os.path.exists(result["image_path"]) else 0
+        typer.echo(f"  图片: {result['image_path']} ({size_kb:.0f} KB)")
+        typer.echo(f"  元数据: {result['metadata_path']}")
+        if len(result.get("all_images", [])) > 1:
+            typer.echo(f"  共 {len(result['all_images'])} 张图片")
+    else:
+        typer.secho(f"  生成失败: {result['error']}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -64,7 +255,6 @@ def generate(
         typer.secho("错误: 请设置 ARK_API_KEY 环境变量", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    # 互斥校验：--prompt 和 --session 不能同时使用
     if prompt and session:
         typer.secho("错误: --prompt 和 --session 不能同时使用", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
@@ -73,125 +263,15 @@ def generate(
         typer.secho("错误: 请提供 --prompt 或 --session", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
+    # 校验 size 参数
+    validated_size = _validate_size(size)
+
     if session:
-        # ── session 模式 ──────────────────────────────────────────────────────
-        if not os.path.exists(session):
-            typer.secho(f"错误: session 文件不存在: {session}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-
-        try:
-            with open(session, "r", encoding="utf-8") as f:
-                session_data = json.load(f)
-        except json.JSONDecodeError as e:
-            typer.secho(f"错误: session 文件解析失败: {e}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-
-        if "prompt" not in session_data:
-            typer.secho("错误: session 文件中缺少 prompt 字段", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-
-        # 解析参考图（从 session 中读取 dataUrl，可直接传给 API）
-        data_urls = [
-            img["dataUrl"]
-            for img in session_data.get("images", [])
-            if img.get("dataUrl")
-        ]
-        resolved_images = list(data_urls)
-
-        # 输出到 edit session 的 output/ 目录
-        session_path_obj = Path(session).resolve()
-        session_dir = session_path_obj.parent
-        output_dir = str(session_dir / "output")
-
-        typer.echo("  Seedream 5.0 Pro 图像生成（session 模式）")
-        typer.echo(f"  Session 文件: {session}")
-        prompt_text = session_data["prompt"]
-        typer.echo(f"  Prompt: {prompt_text[:80]}{'...' if len(prompt_text) > 80 else ''}")
-        if resolved_images:
-            typer.echo(f"  参考图: {len(resolved_images)} 张")
-        typer.echo(f"  输出目录: {output_dir}")
-        typer.echo("")
-
-        task: dict = {
-            "prompt": session_data["prompt"],
-            "size": size,
-            "output_format": output_format,
-            "watermark": watermark,
-        }
-        task["optimize_prompt_options"] = {"mode": optimize}
-        if resolved_images:
-            task["image"] = resolved_images if len(resolved_images) > 1 else resolved_images[0]
-
-        result = single_generate(task, timeout=timeout, output_dir=output_dir)
-
-        # 更新 edit session 的输出记录
-        add_edit_session_output(session, result)
+        result = _generate_from_session(session, validated_size, output_format, watermark, optimize, timeout)
     else:
-        # ── prompt 模式 ───────────────────────────────────────────────────────
-        task: dict = {
-            "prompt": prompt,
-            "size": size,
-            "output_format": output_format,
-            "watermark": watermark,
-        }
-        task["optimize_prompt_options"] = {"mode": optimize}
+        result, _ = _generate_from_prompt(prompt, images, validated_size, output_format, watermark, optimize, timeout)
 
-        if images:
-            if len(images) > MAX_REF_IMAGES:
-                typer.secho(f"错误: 最多支持 {MAX_REF_IMAGES} 张参考图", fg=typer.colors.RED, err=True)
-                raise typer.Exit(1)
-
-            resolved = []
-            for path in images:
-                try:
-                    resolved.append(_resolve_image_path(path))
-                except (FileNotFoundError, ValueError) as e:
-                    typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
-                    raise typer.Exit(1)
-
-            task["image"] = resolved if len(resolved) > 1 else resolved[0]
-
-        # 创建生成会话
-        session_data, session_path = init_generate_session(task)
-        gen_session_id = session_data["session_id"]
-        output_dir = str(Path(DEFAULT_OUTPUT_DIR) / "generate" / gen_session_id / "output")
-
-        typer.echo("  Seedream 5.0 Pro 图像生成")
-        typer.echo(f"  会话 ID: {gen_session_id}")
-        typer.echo(f"  Session 文件: {session_path}")
-        typer.echo(f"  Prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
-        typer.echo(f"  Size: {size}")
-        typer.echo(f"  输出目录: {output_dir}")
-        typer.echo(f"  格式: {output_format}")
-        if images:
-            typer.echo(f"  参考图: {len(images)} 张")
-        if watermark:
-            typer.echo("  水印: 开启")
-        typer.echo(f"  优化模式: {optimize}")
-        typer.echo("")
-
-        # 更新 session 状态为 running
-        update_generate_session(session_path, "running", {"error": None})
-
-        result = single_generate(task, timeout=timeout, output_dir=output_dir)
-
-        # 更新 session 状态
-        if result["status"] == "success":
-            update_generate_session(session_path, "success", result)
-        else:
-            update_generate_session(session_path, "error", result)
-
-    # ── 输出结果 ──────────────────────────────────────────────────────────────
-    if result["status"] == "success":
-        typer.secho("  生成成功!", fg=typer.colors.GREEN)
-        size_kb = os.path.getsize(result["image_path"]) / 1024 if os.path.exists(result["image_path"]) else 0
-        typer.echo(f"  图片: {result['image_path']} ({size_kb:.0f} KB)")
-        typer.echo(f"  元数据: {result['metadata_path']}")
-        if len(result.get("all_images", [])) > 1:
-            typer.echo(f"  共 {len(result['all_images'])} 张图片")
-    else:
-        typer.secho(f"  生成失败: {result['error']}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
+    _print_result(result)
 
 
 # ── session 子命令组 ────────────────────────────────────────────────────────

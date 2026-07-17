@@ -3,7 +3,7 @@ name: seedream5pro-image
 description: Seedream 5.0 Pro 专用图像生成技能。文生图 / 图生图 / 交互编辑（<point>/<bbox> 坐标精确定位），自动保存到本地。内置 17 类提示词模板。使用该技能时：用户想画图、生成图片、改图、编辑图片、做海报/UI/产品图/插画/角色/地图/信息图/分镜等任何视觉内容，或需要高质量的 AI 图像生成能力。
 license: MIT
 tags: ["image-generation", "seedream-5.0-pro", "seedream", "volcengine", "text-to-image", "image-to-image", "interactive-edit", "local-save"]
-version: 2.1.0
+version: 2.1.1
 ---
 
 # Seedream 5.0 Pro 图像生成

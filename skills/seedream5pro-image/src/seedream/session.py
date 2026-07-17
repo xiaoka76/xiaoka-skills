@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import os
 import struct
 import uuid
 import warnings
@@ -84,13 +85,18 @@ def load_session(path: str | Path) -> dict:
 
 def save_session(path: str | Path, data: dict) -> None:
     """
-    将字典写回 session.json 文件。
+    将字典写回 session.json 文件（原子写入，防止进程崩溃时文件损坏）。
+
+    先写入临时文件，再通过 os.replace 原子替换目标文件。
 
     :param path: session.json 文件路径
     :param data: 要写入的字典数据
     """
-    with open(path, "w", encoding="utf-8") as f:
+    p = Path(path)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, p)
 
 
 def init_session(preload_paths: list[str]) -> tuple[dict, Path]:

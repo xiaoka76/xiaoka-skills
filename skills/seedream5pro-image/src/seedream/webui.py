@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import mimetypes
+import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -42,9 +45,36 @@ MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 # 单次 /api/save 请求体大小上限（字节），防止超大 base64 payload 导致 OOM
 MAX_SAVE_BYTES = 100 * 1024 * 1024
 
+# ── 速率限制（单用户本地工具，防止误操作频繁请求）─────────────────────────────
+
+# 上传端点：每分钟最多 20 次
+_UPLOAD_RATE_WINDOW: float = 60.0
+_UPLOAD_RATE_LIMIT: int = 20
+# 保存端点：每分钟最多 30 次
+_SAVE_RATE_WINDOW: float = 60.0
+_SAVE_RATE_LIMIT: int = 30
+
+_upload_requests: list[float] = []
+_save_requests: list[float] = []
+
+
+def _check_rate_limit(history: list[float], window: float, limit: int) -> bool:
+    """检查是否超出速率限制，返回 True 表示允许。"""
+    now = time.time()
+    # 清理过期记录
+    cutoff = now - window
+    while history and history[0] < cutoff:
+        history.pop(0)
+    if len(history) >= limit:
+        return False
+    history.append(now)
+    return True
+
 
 # ── Session 状态 ──────────────────────────────────────────────────────────────
 
+# 本工具面向智能体本地单用户调用，使用模块级全局变量管理唯一的编辑会话。
+# 不支持多并发编辑会话——这是设计决策，而非缺陷。
 _session: dict[str, Any] = {}
 
 
@@ -74,12 +104,19 @@ def init_session_global(preload_paths: list[str] | None = None) -> dict[str, Any
 
 
 def _write_session() -> None:
-    """将内存中的 session data 写回 session.json 文件"""
+    """将内存中的 session data 原子写回 session.json 文件，失败时记录日志。"""
+    logger = logging.getLogger("seedream.webui")
     session_path = _session.get("path", "")
     if not session_path:
         return
-    with open(session_path, "w", encoding="utf-8") as f:
-        json.dump(_session["data"], f, ensure_ascii=False, indent=2)
+    p = Path(session_path)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_session["data"], f, ensure_ascii=False, indent=2)
+        os.replace(tmp, p)
+    except OSError as e:
+        logger.error("session 文件写入失败: %s", e)
 
 
 # ── 请求模型 ──────────────────────────────────────────────────────────────────
@@ -171,6 +208,9 @@ def create_app() -> FastAPI:
         接收 multipart/form-data 格式的图片文件，转换为 base64 后直接嵌入 session.json。
         单个文件不超过 MAX_UPLOAD_BYTES，防止内存被撑爆。
         """
+        if not _check_rate_limit(_upload_requests, _UPLOAD_RATE_WINDOW, _UPLOAD_RATE_LIMIT):
+            return _error("请求过于频繁，请稍后再试", 429)
+
         session_data = _session.get("data", {})
         if not session_data:
             return _error("session 未初始化", 500)
@@ -224,6 +264,9 @@ def create_app() -> FastAPI:
         图片的 dataUrl 直接嵌入 session.json，不解码保存到磁盘。
         请求体大小受 MAX_SAVE_BYTES 限制，防止超大 base64 payload 导致 OOM。
         """
+        if not _check_rate_limit(_save_requests, _SAVE_RATE_WINDOW, _SAVE_RATE_LIMIT):
+            return _error("请求过于频繁，请稍后再试", 429)
+
         session_data = _session.get("data", {})
         if not session_data:
             return _error("session 未初始化", 500)

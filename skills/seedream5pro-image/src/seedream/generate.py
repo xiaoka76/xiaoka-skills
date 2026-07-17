@@ -8,6 +8,7 @@ Seedream 5.0 Pro - 图像生成核心函数模块
 import base64
 import hashlib
 import os
+import time
 import uuid
 
 import httpx
@@ -22,6 +23,26 @@ from .config import (
     ref_label,
     timestamp,
 )
+
+# ── 共享 HTTP 客户端（连接池复用）──────────────────────────────────────────────
+
+_http_client: httpx.Client | None = None
+
+
+def _get_client(timeout: float = 300.0) -> httpx.Client:
+    """获取或创建模块级 httpx.Client，每次调用时更新超时设置。"""
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.Client(timeout=httpx.Timeout(timeout))
+    else:
+        _http_client.timeout = httpx.Timeout(timeout)
+    return _http_client
+
+
+# ── API 重试配置 ──────────────────────────────────────────────────────────────
+
+_MAX_RETRIES: int = 3
+_RETRY_BACKOFF: float = 1.5  # 指数退避基数（秒）
 
 
 # ── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -102,33 +123,53 @@ def _build_request_body(item: dict) -> dict:
 
 
 def _call_api(item: dict, timeout: int) -> dict:
-    """调用 Seedream 5.0 Pro 图像生成 API。
+    """调用 Seedream 5.0 Pro 图像生成 API（含指数退避重试）。
 
     :param item: 任务参数
     :param timeout: API 超时秒数
     :return: API 返回的 JSON 响应
-    :raises httpx.HTTPStatusError: HTTP 非 2xx，错误信息包含响应体便于定位
-    :raises httpx.RequestError: 网络层错误（连接超时、DNS 失败等）
+    :raises httpx.HTTPStatusError: HTTP 非 2xx（不可重试的状态码直接抛出）
+    :raises httpx.RequestError: 网络层错误（重试耗尽后抛出）
     """
     url = f"{API_BASE}/images/generations"
     body = _build_request_body(item)
-    with httpx.Client(timeout=float(timeout)) as client:
-        resp = client.post(url, headers=_get_headers(), json=body)
-        if resp.status_code >= 400:
-            # 将 API 返回的错误体附加到异常信息，避免仅看到 "400 Bad Request" 这类无意义描述
-            detail = resp.text
-            try:
-                parsed = resp.json()
-                if isinstance(parsed, dict) and "error" in parsed:
-                    detail = str(parsed["error"])
-            except (ValueError, TypeError):
-                pass
-            raise httpx.HTTPStatusError(
-                f"HTTP {resp.status_code} {resp.reason_phrase}: {detail}",
-                request=resp.request,
-                response=resp,
-            )
-        return resp.json()
+    client = _get_client(float(timeout))
+
+    last_error: Exception | None = None
+    for attempt in range(_MAX_RETRIES):
+        try:
+            resp = client.post(url, headers=_get_headers(), json=body)
+            if resp.status_code >= 400:
+                detail = resp.text
+                try:
+                    parsed = resp.json()
+                    if isinstance(parsed, dict) and "error" in parsed:
+                        detail = str(parsed["error"])
+                except (ValueError, TypeError):
+                    pass
+                # 4xx 错误（非 429）不可重试，直接抛出
+                if resp.status_code != 429 and resp.status_code < 500:
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {resp.status_code} {resp.reason_phrase}: {detail}",
+                        request=resp.request,
+                        response=resp,
+                    )
+                # 429 / 5xx 可重试
+                last_error = httpx.HTTPStatusError(
+                    f"HTTP {resp.status_code} {resp.reason_phrase}: {detail}",
+                    request=resp.request,
+                    response=resp,
+                )
+            else:
+                return resp.json()
+        except httpx.RequestError as e:
+            last_error = e
+
+        if attempt < _MAX_RETRIES - 1:
+            wait = _RETRY_BACKOFF ** (attempt + 1)
+            time.sleep(wait)
+
+    raise last_error  # type: ignore[arg-type]
 
 
 def _download_image(url: str, output_dir: str, filename: str, ext: str) -> str:
@@ -142,11 +183,11 @@ def _download_image(url: str, output_dir: str, filename: str, ext: str) -> str:
     """
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"{filename}.{ext}")
-    with httpx.Client(timeout=120.0) as client:
-        resp = client.get(url)
-        resp.raise_for_status()
-        with open(path, "wb") as f:
-            f.write(resp.content)
+    client = _get_client(120.0)
+    resp = client.get(url)
+    resp.raise_for_status()
+    with open(path, "wb") as f:
+        f.write(resp.content)
     return os.path.abspath(path)
 
 
@@ -235,7 +276,7 @@ def _save_ref_images(ref_images: str | list[str], output_dir: str) -> list[dict[
                 "path": os.path.abspath(local_path),
                 "label": f"[Base64] {fmt}, ~{len(img_data) / 1024:.0f} KB",
             })
-        except (ValueError, IndexError, base64.binascii.Error):
+        except (ValueError, IndexError, base64.Error):
             saved.append({"index": str(i + 1), "path": "", "label": ref_label(ref)})
     return saved
 
