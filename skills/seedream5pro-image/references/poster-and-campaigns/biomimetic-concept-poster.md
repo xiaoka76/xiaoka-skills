@@ -170,6 +170,10 @@
 - 不指定 industry → 按产品类型自动归类（飞行器=aerospace；鞋=footwear；椅=furniture）
 - 不指定颜色 → 按 industry 推荐（aerospace=black+cyan；footwear=white+orange；furniture=warm wood+cream）
 
+## 变体方式
+
+本模板支持通过调整主模板中的风格、布局或格式字段生成变体。用户可指定具体方向，或使用自动补全模式快速生成示例。
+
 ## 变体 1：复古蓝图风（cream paper + ink）
 
 📝 提示词

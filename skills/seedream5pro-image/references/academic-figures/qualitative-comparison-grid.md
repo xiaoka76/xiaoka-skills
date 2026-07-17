@@ -162,6 +162,10 @@
 - 用户说 "ablation study" → 列名改为 "w/o A", "w/o B", "Full" 等消融变体
 - 用户说 "需要 zoom-in" → 启用 `zoom_in_enabled` 并提示需要标 region 坐标
 
+## 变体方式
+
+本模板支持通过调整主模板中的风格、布局或格式字段生成变体。用户可指定具体方向，或使用自动补全模式快速生成示例。
+
 ## 变体 1：纯文本 NLP qualitative 对比
 
 ```json

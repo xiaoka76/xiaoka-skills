@@ -129,6 +129,10 @@ Language: {argument name="language" default="中文（手写体感）"}; technic
 - 用户说"教学 / 课堂" → palette 自动选 chalkboard 或 macaron
 - 用户说"暖系 / 美食 / 治愈" → palette 自动选 morandi 或 kraft
 
+## 变体方式
+
+本模板支持通过调整主模板中的风格、布局或格式字段生成变体。用户可指定具体方向，或使用自动补全模式快速生成示例。
+
 ## 变体 1：黑板粉笔风手绘信息图
 
 把上面提示词里的 palette 换成 `chalkboard`：

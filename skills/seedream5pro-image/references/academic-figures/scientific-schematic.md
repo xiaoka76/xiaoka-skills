@@ -124,6 +124,10 @@ CAPTION (optional, drawn below figure)
 - 用户没给 reference_style：根据领域猜——CV/ML 用 "顶会论文风"；生物用 "BioRender / Nature methods 风"；物理用 "教科书 + 公式风"
 - 用户说"我要无英文，全中文" → 切换 label_font 为思源黑 / 宋体 + 公式保留 LaTeX 数学体
 
+## 变体方式
+
+本模板支持通过调整主模板中的风格、布局或格式字段生成变体。用户可指定具体方向，或使用自动补全模式快速生成示例。
+
 ## 变体 1：实验装置示意图（光学 / 化学）
 
 ```

@@ -145,6 +145,10 @@
 - 用户说"年报严肃版" → 切换到亮色背景 + mono palette，字体改 Inter，去掉 emoji
 - 用户说"个人复盘" → 加 footer credit，用暖色 accent，可加可爱 emoji
 
+## 变体方式
+
+本模板支持通过调整主模板中的风格、布局或格式字段生成变体。用户可指定具体方向，或使用自动补全模式快速生成示例。
+
 ## 变体 1：Spotify Wrapped 风
 
 ```json

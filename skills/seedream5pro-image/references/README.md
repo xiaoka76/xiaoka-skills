@@ -7,7 +7,7 @@
 1. 先根据任务类型找到对应分类目录
 2. 打开具体模板 `.md` 文件
 3. 模板中的 `{argument name="..." default="..."}` 是需要替换的参数
-4. 渲染好的 JSON 展开成自然语言 prompt 字符串，传给 `seedream_image_generate.py`
+4. 渲染好的 JSON 展开成自然语言 prompt 字符串，传给 `generate.py`
 
 ## 与 GPT Image 2 的区别
 

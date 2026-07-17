@@ -12,7 +12,7 @@
 
 ### 图像生成 — `seedream5pro-image`
 
-[Seedream 5.0 Pro](https://www.volcengine.com/product/doubao-seedream) 专用图像生成技能。支持文生图、图生图、交互编辑，内置 17 类提示词模板。
+[Seedream 5.0 Pro](https://www.volcengine.com/product/doubao-seedream) 专用图像生成技能。支持文生图、图生图、交互编辑，内置 17 类共 91 个提示词模板。
 
 **核心能力：**
 - 文生图（支持中文 prompt）
@@ -22,7 +22,7 @@
 - 自动本地保存
 - 一键分辨率切换（1K / 2K）
 
-**内置模板分类（17 类）：**
+**内置模板分类（17 类共 91 个模板）：**
 
 | 分类 | 说明 |
 |------|------|
@@ -83,7 +83,7 @@ xiaoka-skills/
 │       ├── SKILL.md         # 技能清单
 │       ├── scripts/         # 可执行脚本
 │       │   └── generate.py
-│       └── references/      # 知识库（17 类提示词模板）
+│       └── references/      # 知识库（17 类共 91 个提示词模板）
 │           ├── README.md
 │           ├── prompt-writing.md
 │           └── <category>/

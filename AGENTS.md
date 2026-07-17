@@ -48,7 +48,7 @@ Agent **必须**在执行任何技能操作前先读取 `SKILL.md`。
 
 ### 3. 知识库 (`references/`)
 
-`references/` 目录包含技能所需的知识库文档。Agent 在执行任务时应当：
+`references/` 目录包含技能所需的知识库文档。当前 `seedream5pro-image` 技能内置 **17 类共 91 个提示词模板**，分布在 `prompt-writing.md`（模板方法论总规范）和各分类目录中。Agent 在执行任务时应当：
 - 根据任务类型（如"学术配图"、"品牌海报"）选择对应分类的模板
 - 参考模板中的 JSON 结构构建提示词
 - 遵循 `prompt-writing.md` 中的模板方法论

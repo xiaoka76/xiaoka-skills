@@ -18,7 +18,7 @@ import os
 import re
 import sys
 from datetime import datetime
-from typing import Dict, List, Tuple
+
 
 import httpx
 
@@ -146,7 +146,7 @@ async def single_generate(
     item: dict,
     timeout: int = 300,
     output_dir: str = DEFAULT_OUTPUT_DIR,
-) -> Dict:
+) -> dict:
     """
     执行一次图像生成（文生图 / 图生图 / 交互编辑）。
 
@@ -251,7 +251,8 @@ async def single_generate(
 
 # ── CLI 入口 ──────────────────────────────────────────────────────────────────
 
-def main():
+def main() -> None:
+    """CLI 入口：解析参数并执行图像生成"""
     parser = argparse.ArgumentParser(
         description="Seedream 5.0 Pro 图像生成 - 文生图 / 图生图 / 交互编辑，自动保存到本地"
     )
