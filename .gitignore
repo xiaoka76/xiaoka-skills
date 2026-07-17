@@ -248,3 +248,4 @@ lost+found/
 
 # Project-specific
 seedream-output/
+.seedream/

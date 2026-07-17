@@ -6,7 +6,7 @@
 
 ## 简介
 
-`xiaoka-skills` 是一个开源项目，收录了一系列面向 AI 编码助手（如 Trae IDE）的**技能包**。每个技能包以独立目录组织，包含技能清单、可执行脚本和知识库文档，帮助 AI 获得特定领域的专业能力。
+`xiaoka-skills` 是一个开源项目，收录了一系列面向 AI 编码助手（如 Trae IDE）的**技能包**。每个技能包以独立目录组织，包含技能清单、可安装的 Python 包和知识库文档，帮助 AI 获得特定领域的专业能力。
 
 ## 技能列表
 
@@ -47,26 +47,28 @@
 **快速开始：**
 
 ```bash
-# 安装依赖
-pip install httpx
+# 进入技能目录
+cd skills/seedream5pro-image
 
-# 设置 API Key（火山引擎/豆包模型）
+# 设置 API Key（或创建 .env 文件自动加载）
 export ARK_API_KEY="your-api-key"
 
-# 文生图
-python skills/seedream5pro-image/scripts/generate.py \
-    --prompt "一只橘猫坐在窗台上，午后阳光" \
-    --size 2K
+# 方式一：使用 uv 直接运行（推荐）
+uv run seedream generate --prompt "一只橘猫坐在窗台上，午后阳光" --size 2K
+
+# 方式二：安装为全局工具
+uv tool install .
+seedream generate --prompt "一只橘猫坐在窗台上，午后阳光" --size 2K
 
 # 图生图（URL 或本地路径）
-python skills/seedream5pro-image/scripts/generate.py \
+seedream generate \
     --prompt "把这只猫放在日式庭院里" \
     --images "https://example.com/cat.jpg" \
     --size 1K
 
 # 交互编辑（使用坐标定位）
-python skills/seedream5pro-image/scripts/generate.py \
-    --prompt "把 <bbox>(100,200,300,400)</bbox> 区域中的狗换成猫" \
+seedream generate \
+    --prompt "把图1<bbox>179 283 796 986</bbox>区域中的狗换成猫" \
     --images "https://example.com/photo.jpg"
 ```
 
@@ -81,16 +83,23 @@ xiaoka-skills/
 ├── skills/                  # 技能目录
 │   └── seedream5pro-image/  # 图像生成技能
 │       ├── SKILL.md         # 技能清单
-│       ├── scripts/         # 可执行脚本
-│       │   └── generate.py
+│       ├── pyproject.toml   # 包配置
+│       ├── src/seedream/    # 可安装的 Python 包
+│       │   ├── cli.py       # CLI 入口（seedream generate/session/webui）
+│       │   ├── generate.py  # 核心生成逻辑
+│       │   ├── session.py   # Session 读写工具
+│       │   ├── webui.py     # 交互编辑 WebUI 后端
+│       │   ├── config.py    # 配置常量
+│       │   └── static/      # WebUI 前端文件
 │       └── references/      # 知识库（17 类共 91 个提示词模板）
 │           ├── README.md
 │           ├── prompt-writing.md
 │           └── <category>/
 │               └── <template>.md
 ├── .trae/
-│   └── rules/
-│       └── code-style.md    # Python 编码规范
+│   ├── rules/
+│   │   └── code-style.md    # Python 编码规范
+│   └── specs/               # 开发规范文档
 ├── AGENTS.md                # AI Agent 交互指南
 ├── LICENSE                  # MIT 许可证
 └── README.md

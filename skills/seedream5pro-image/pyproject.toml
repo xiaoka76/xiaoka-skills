@@ -1,0 +1,18 @@
+[project]
+name = "seedream"
+version = "1.0.0"
+description = "Seedream 5.0 Pro 图像生成 CLI - 文生图/图生图/交互编辑"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "httpx>=0.28",
+    "python-dotenv>=1.0",
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+seedream = "seedream.cli:app"
+
+[tool.uv.sources]

@@ -13,8 +13,12 @@
 ```
 skills/<skill-name>/
 ├── SKILL.md              # 技能清单（元数据、能力描述、调用方式）
-├── scripts/              # 可执行脚本
-│   └── <tool>.py
+├── src/                  # 可安装的 Python 包
+│   └── <package>/
+│       ├── cli.py        # CLI 入口
+│       ├── generate.py   # 核心生成逻辑
+│       └── ...
+├── pyproject.toml        # 包配置（支持 uv tool install）
 └── references/           # 知识库文档
     ├── README.md
     └── <category>/
@@ -23,9 +27,9 @@ skills/<skill-name>/
 
 ## 当前技能列表
 
-| 技能名称 | 描述 | 核心脚本 |
-|----------|------|----------|
-| `seedream5pro-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/交互编辑） | `scripts/generate.py` |
+| 技能名称 | 描述 | 入口 |
+|----------|------|------|
+| `seedream5pro-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/交互编辑） | `seedream generate` |
 
 ## Agent 交互规则
 
@@ -61,20 +65,29 @@ Agent **必须**在执行任何技能操作前先读取 `SKILL.md`。
 - 无返回值函数必须标注 `-> None`
 - 所有公共函数必须包含完整注释
 
-## 运行脚本
+## 运行技能
 
 ```bash
-# 安装依赖
-pip install httpx
+# 进入技能目录
+cd skills/seedream5pro-image
 
-# 运行图像生成（需要设置 API Key）
+# 安装依赖
+pip install httpx typer fastapi uvicorn python-dotenv
+
+# 使用 uv 运行（推荐）
+uv run seedream generate --prompt "一只橘猫" --size 2K
+
+# 或安装为全局工具
+uv tool install .
+seedream generate --prompt "一只橘猫" --size 2K
+
+# 需要设置 API Key（或创建 .env 文件自动加载）
 export ARK_API_KEY="your-api-key"
-python skills/seedream5pro-image/scripts/generate.py --prompt "一只橘猫" --size 2K
 ```
 
 ## 输出目录
 
-图像生成脚本默认将图片和元数据文件保存到项目根目录下的 `seedream-output/` 目录。该目录已被加入 `.gitignore`，不会提交到版本控制。
+图像生成脚本默认将图片和元数据文件保存到运行目录下的 `.seedream/` 目录。该目录已被加入 `.gitignore`，不会提交到版本控制。可通过 `--output-dir` 参数自定义输出路径。
 
 ## 添加新技能
 
@@ -83,7 +96,8 @@ python skills/seedream5pro-image/scripts/generate.py --prompt "一只橘猫" --s
 ```
 skills/<new-skill>/
 ├── SKILL.md              # 必需：技能清单
-├── scripts/              # 可选：可执行脚本
+├── pyproject.toml        # 可选：包配置
+├── src/                  # 可选：Python 包
 └── references/           # 可选：知识库文档
 ```
 

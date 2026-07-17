@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>交互编辑 - Seedream 5.0 Pro</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <strong>交互编辑 - Seedream 5.0 Pro</strong>
+        <span class="muted">上传图片、缩放画布、点选/框选标注，提交编辑意图</span>
+      </div>
+      <label class="upload-button">
+        上传图片
+        <input id="fileInput" type="file" accept="image/*" multiple />
+      </label>
+    </header>
+
+    <main class="layout">
+      <aside class="toolbar">
+        <button class="tool active" data-mode="normal">1 普通</button>
+        <button class="tool" data-mode="point">2 点击</button>
+        <button class="tool" data-mode="bbox">3 框选</button>
+        <div class="hint">
+          <p><b>普通</b>：拖图片；拖空白平移画布。</p>
+          <p><b>点击</b>：点图上位置，追加 <code>&lt;point&gt;</code>。</p>
+          <p><b>框选</b>：在图上拖框，追加 <code>&lt;bbox&gt;</code>。</p>
+          <p>滚轮缩放，坐标按图片自身归一化到 0-1000。</p>
+        </div>
+      </aside>
+
+      <section id="viewport" class="viewport">
+        <div id="world" class="world"></div>
+        <div class="zoom-badge" id="zoomBadge">100%</div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-section">
+          <h2>编辑意图</h2>
+          <div
+            id="intentInput"
+            class="intent-editor empty"
+            contenteditable="true"
+            data-placeholder="例如：把图1里这只猫换成狗，背景改成沙滩风格"
+          ></div>
+          <div id="annotationPreview" class="annotation-preview empty hidden">暂无点选/框选预览。</div>
+          <div class="row">
+            <button id="saveBtn" class="primary save">保存</button>
+            <button id="clearPromptBtn">清空指令</button>
+          </div>
+          <div id="saveStatus" class="save-status"></div>
+          <div id="status" class="status">等待上传图片。</div>
+        </div>
+
+        <div class="panel-section">
+          <h2>图片列表</h2>
+          <div id="imageList" class="image-list"></div>
+        </div>
+      </aside>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
