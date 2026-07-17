@@ -301,6 +301,8 @@ def single_generate(
         for i, img_data in enumerate(data_list):
             if "error" in img_data:
                 continue
+            if "b64_json" not in img_data:
+                continue
 
             filename = f"{uid}-{i}" if len(data_list) > 1 else uid
             local_path: str | None = None
