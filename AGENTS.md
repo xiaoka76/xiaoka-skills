@@ -74,11 +74,11 @@ Agent **必须**在执行任何技能操作前先读取 `SKILL.md`。
 # 安装为全局工具（推荐）
 cd skills/seedream5pro-image
 uv tool install .
-seedream generate --prompt "一只橘猫" --size 2K
+seedream generate -p "一只橘色虎斑猫，毛发蓬松，翡翠绿眼睛，坐在洒满阳光的木质窗台上，窗外是秋天枫叶，写实摄影风格，暖金色侧光，中景构图，超精细8K" --size 2K
 
 # 或使用 uv run 直接运行
 cd skills/seedream5pro-image
-uv run seedream generate --prompt "一只橘猫" --size 2K
+uv run seedream generate -p "一只橘色虎斑猫，毛发蓬松，翡翠绿眼睛，坐在洒满阳光的木质窗台上，窗外是秋天枫叶，写实摄影风格，暖金色侧光，中景构图，超精细8K" --size 2K
 
 # 需要设置 API Key（仅支持环境变量，不读取 .env 文件）
 export ARK_API_KEY="your-api-key"
