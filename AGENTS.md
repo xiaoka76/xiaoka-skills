@@ -13,12 +13,15 @@
 ```
 skills/<skill-name>/
 ├── SKILL.md              # 技能清单（元数据、能力描述、调用方式）
+├── pyproject.toml        # 包配置（支持 uv tool install）
 ├── src/                  # 可安装的 Python 包
 │   └── <package>/
 │       ├── cli.py        # CLI 入口
 │       ├── generate.py   # 核心生成逻辑
-│       └── ...
-├── pyproject.toml        # 包配置（支持 uv tool install）
+│       ├── session.py    # Session 管理
+│       ├── webui.py      # WebUI 后端
+│       ├── config.py     # 配置常量
+│       └── static/       # WebUI 前端文件
 └── references/           # 知识库文档
     ├── README.md
     └── <category>/
@@ -68,18 +71,14 @@ Agent **必须**在执行任何技能操作前先读取 `SKILL.md`。
 ## 运行技能
 
 ```bash
-# 进入技能目录
+# 安装为全局工具（推荐）
 cd skills/seedream5pro-image
-
-# 安装依赖
-pip install httpx typer fastapi uvicorn python-dotenv
-
-# 使用 uv 运行（推荐）
-uv run seedream generate --prompt "一只橘猫" --size 2K
-
-# 或安装为全局工具
 uv tool install .
 seedream generate --prompt "一只橘猫" --size 2K
+
+# 或使用 uv run 直接运行
+cd skills/seedream5pro-image
+uv run seedream generate --prompt "一只橘猫" --size 2K
 
 # 需要设置 API Key（或创建 .env 文件自动加载）
 export ARK_API_KEY="your-api-key"
@@ -87,7 +86,12 @@ export ARK_API_KEY="your-api-key"
 
 ## 输出目录
 
-图像生成脚本默认将图片和元数据文件保存到运行目录下的 `.seedream/` 目录。该目录已被加入 `.gitignore`，不会提交到版本控制。可通过 `--output-dir` 参数自定义输出路径。
+图像生成结果按会话类型统一保存到 `.seedream/` 目录：
+
+- 文生图/图生图 → `.seedream/generate/<session_id>/output/`
+- 交互编辑 → `.seedream/edit/<session_id>/output/`
+
+该目录已被加入 `.gitignore`，不会提交到版本控制。
 
 ## 添加新技能
 

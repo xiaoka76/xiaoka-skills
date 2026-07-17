@@ -600,31 +600,34 @@ function setMode(mode) {
   );
 }
 
-function addImageFromFile(file, dataUrl) {
-  const probe = new Image();
-  probe.onload = () => {
-    const maxSide = 360;
-    const ratio = Math.min(1, maxSide / Math.max(probe.naturalWidth, probe.naturalHeight));
-    const id = `img-${state.nextId}`;
-    const image = {
-      id,
-      label: `图${state.nextId}`,
-      name: file.name,
-      dataUrl,
-      element: probe,
-      naturalWidth: probe.naturalWidth,
-      naturalHeight: probe.naturalHeight,
-      x: 80 + (state.nextId - 1) * 40,
-      y: 80 + (state.nextId - 1) * 40,
-      width: Math.round(probe.naturalWidth * ratio),
-      height: Math.round(probe.naturalHeight * ratio),
+function addImageFromFile(file, dataUrl, label, pos) {
+  return new Promise((resolve) => {
+    const probe = new Image();
+    probe.onload = () => {
+      const maxSide = 360;
+      const ratio = Math.min(1, maxSide / Math.max(probe.naturalWidth, probe.naturalHeight));
+      const id = `img-${state.nextId}`;
+      const image = {
+        id,
+        label: label || `图${state.nextId}`,
+        name: file.name,
+        dataUrl,
+        element: probe,
+        naturalWidth: probe.naturalWidth,
+        naturalHeight: probe.naturalHeight,
+        x: pos?.x ?? (80 + (state.nextId - 1) * 40),
+        y: pos?.y ?? (80 + (state.nextId - 1) * 40),
+        width: pos?.width ?? Math.round(probe.naturalWidth * ratio),
+        height: pos?.height ?? Math.round(probe.naturalHeight * ratio),
+      };
+      state.nextId += 1;
+      state.images.push(image);
+      selectImage(id);
+      setStatus(`已上传 ${image.label}，可拖拽或点选/框选。`);
+      resolve(image);
     };
-    state.nextId += 1;
-    state.images.push(image);
-    selectImage(id);
-    setStatus(`已上传 ${image.label}，可拖拽或点选/框选。`);
-  };
-  probe.src = dataUrl;
+    probe.src = dataUrl;
+  });
 }
 
 function addFiles(files) {
@@ -925,21 +928,44 @@ async function saveSession() {
   const modelInput = buildModelInputFromPrompt();
   const userIntent = getEditorIntent();
 
+  // 保存时发送所有图片（保持原始标签和位置），新图片追加到 session，已有图片不丢失
+  const allImages = state.images.map((image) => ({
+    inputLabel: image.label,
+    name: image.name,
+    dataUrl: image.dataUrl,
+    naturalWidth: image.naturalWidth,
+    naturalHeight: image.naturalHeight,
+    x: image.x,
+    y: image.y,
+    width: image.width,
+    height: image.height,
+  }));
+
+  // 发送标注数据（直接使用前端状态，避免后端重新解析导致 ID 不一致）
+  const annotationsData = state.annotations.map((ann) => {
+    const image = state.images.find((item) => item.id === ann.imageId);
+    return {
+      id: ann.id,
+      type: ann.type,
+      image_label: image ? image.label : "",
+      normalized_coords: ann.type === "point"
+        ? [ann.x, ann.y]
+        : [ann.x1, ann.y1, ann.x2, ann.y2],
+      token: ann.token,
+    };
+  });
+
   try {
+    // 保存时使用原始标签的 prompt（与 images 标签一致），modelInput.prompt 仅用于生成 API
     const resp = await fetch("/api/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        prompt: modelInput.prompt,
+        prompt: userIntent,
         user_intent: userIntent,
         intent_html: intentInput.innerHTML,
-        images: modelInput.images.map((image) => ({
-          inputLabel: image.inputLabel,
-          name: image.name,
-          dataUrl: image.dataUrl,
-          naturalWidth: image.naturalWidth,
-          naturalHeight: image.naturalHeight,
-        })),
+        images: allImages,
+        annotations: annotationsData,
       }),
     });
 
@@ -965,12 +991,59 @@ async function loadSessionInfo() {
     const resp = await fetch("/api/session-info");
     if (!resp.ok) return;
     const data = await resp.json().catch(() => ({}));
+    // 先加载所有图片（等待图片加载完成，确保 state.images 已就绪，同时恢复位置）
+    const loadPromises = [];
     if (data.images && Array.isArray(data.images)) {
       for (const imgData of data.images) {
-        addImageFromFile(
-          { name: imgData.name || "preloaded.png", type: "image/png" },
-          imgData.dataUrl
+        loadPromises.push(
+          addImageFromFile(
+            { name: imgData.name || "preloaded.png", type: "image/png" },
+            imgData.dataUrl,
+            imgData.inputLabel || undefined,
+            { x: imgData.x, y: imgData.y, width: imgData.width, height: imgData.height }
+          )
         );
+      }
+    }
+    await Promise.all(loadPromises);
+
+    // 恢复已保存的标注（此时 images 已就绪，可正确匹配 label）
+    if (data.annotations && Array.isArray(data.annotations)) {
+      for (const annData of data.annotations) {
+        const image = state.images.find((item) => item.label === annData.image_label);
+        if (!image) continue;
+        const color = colorForAnnotation(annData.id);
+        const coords = annData.normalized_coords;
+        let ann;
+        if (annData.type === "point") {
+          ann = {
+            id: annData.id,
+            type: "point",
+            imageId: image.id,
+            color,
+            x: coords[0],
+            y: coords[1],
+            token: annData.token,
+            previewUrl: makePointPreview(image, { x: coords[0], y: coords[1], color }),
+          };
+        } else {
+          ann = {
+            id: annData.id,
+            type: "bbox",
+            imageId: image.id,
+            color,
+            x1: coords[0],
+            y1: coords[1],
+            x2: coords[2],
+            y2: coords[3],
+            token: annData.token,
+            previewUrl: makeBoxPreview(image, { x1: coords[0], y1: coords[1], x2: coords[2], y2: coords[3], color }),
+          };
+        }
+        state.annotations.push(ann);
+        if (annData.id >= state.nextAnnotationId) {
+          state.nextAnnotationId = annData.id + 1;
+        }
       }
     }
     // 恢复已保存的编辑意图（完整 HTML，含标注 chips）
@@ -983,6 +1056,7 @@ async function loadSessionInfo() {
     if (data.status === "saved") {
       updateSaveStatus("上次已保存");
     }
+    renderImages();
   } catch (err) {
     console.warn("加载 session 信息失败:", err);
   }

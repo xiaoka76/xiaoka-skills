@@ -22,7 +22,15 @@ from dotenv import load_dotenv
 
 from seedream.config import API_KEY, DEFAULT_OUTPUT_DIR, MAX_REF_IMAGES
 from seedream.generate import _resolve_image_path, single_generate
-from seedream.session import data_url_summary, format_coords, load_session, save_session
+from seedream.session import (
+    add_edit_session_output,
+    data_url_summary,
+    format_coords,
+    init_generate_session,
+    load_session,
+    save_session,
+    update_generate_session,
+)
 from seedream.webui import create_app, init_session_global
 
 # 加载 .env 文件
@@ -40,8 +48,7 @@ def generate(
     session: Annotated[str | None, typer.Option("--session", "-S", help="从 session.json 文件读取 prompt 和图片路径（与 --prompt 互斥）")] = None,
     images: Annotated[list[str] | None, typer.Option("--images", help="参考图（URL 或本地路径，可多次指定，最多 10 张）")] = None,
     size: Annotated[str, typer.Option("--size", "-s", help="分辨率: 1K / 2K / 宽x高（默认 2K）")] = "2K",
-    output_format: Annotated[Literal["png", "jpeg"], typer.Option("--output-format", help="输出格式")] = "jpeg",
-    output_dir: Annotated[str, typer.Option("--output-dir", "-o", help="图片保存目录（默认 .seedream）")] = DEFAULT_OUTPUT_DIR,
+    output_format: Annotated[Literal["png", "jpeg"], typer.Option("--output-format", help="输出格式")] = "png",
     watermark: Annotated[bool, typer.Option("--watermark", help="启用水印（默认关闭）")] = False,
     optimize: Annotated[Literal["standard", "fast"], typer.Option("--optimize", help="提示词优化模式（默认 standard）")] = "standard",
     timeout: Annotated[int, typer.Option("--timeout", "-t", help="API 超时秒数（默认 300）")] = 300,
@@ -52,6 +59,10 @@ def generate(
     参考图通过 --images 多次指定，例如：
 
       seedream generate -p "..." --images url1 --images url2
+
+    输出目录结构:
+      .seedream/generate/<session_id>/output/   (普通模式)
+      .seedream/edit/<session_id>/output/        (session 模式)
     """
     if not API_KEY:
         typer.secho("错误: 请设置 ARK_API_KEY 环境变量", fg=typer.colors.RED, err=True)
@@ -91,6 +102,11 @@ def generate(
         ]
         resolved_images = list(data_urls)
 
+        # 输出到 edit session 的 output/ 目录
+        session_path_obj = Path(session).resolve()
+        session_dir = session_path_obj.parent
+        output_dir = str(session_dir / "output")
+
         typer.echo("  Seedream 5.0 Pro 图像生成（session 模式）")
         typer.echo(f"  Session 文件: {session}")
         prompt_text = session_data["prompt"]
@@ -111,6 +127,9 @@ def generate(
             task["image"] = resolved_images if len(resolved_images) > 1 else resolved_images[0]
 
         result = single_generate(task, timeout=timeout, output_dir=output_dir)
+
+        # 更新 edit session 的输出记录
+        add_edit_session_output(session, result)
     else:
         # ── prompt 模式 ───────────────────────────────────────────────────────
         task: dict = {
@@ -136,7 +155,14 @@ def generate(
 
             task["image"] = resolved if len(resolved) > 1 else resolved[0]
 
+        # 创建生成会话
+        session_data, session_path = init_generate_session(task)
+        gen_session_id = session_data["session_id"]
+        output_dir = str(Path(DEFAULT_OUTPUT_DIR) / "generate" / gen_session_id / "output")
+
         typer.echo("  Seedream 5.0 Pro 图像生成")
+        typer.echo(f"  会话 ID: {gen_session_id}")
+        typer.echo(f"  Session 文件: {session_path}")
         typer.echo(f"  Prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
         typer.echo(f"  Size: {size}")
         typer.echo(f"  输出目录: {output_dir}")
@@ -148,7 +174,16 @@ def generate(
         typer.echo(f"  优化模式: {optimize}")
         typer.echo("")
 
+        # 更新 session 状态为 running
+        update_generate_session(session_path, "running", {"error": None})
+
         result = single_generate(task, timeout=timeout, output_dir=output_dir)
+
+        # 更新 session 状态
+        if result["status"] == "success":
+            update_generate_session(session_path, "success", result)
+        else:
+            update_generate_session(session_path, "error", result)
 
     # ── 输出结果 ──────────────────────────────────────────────────────────────
     if result["status"] == "success":

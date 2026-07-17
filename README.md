@@ -17,10 +17,10 @@
 **核心能力：**
 - 文生图（支持中文 prompt）
 - 单/多图生图（最多 10 张参考图）
-- 交互编辑（`<point>` / `<bbox>` 坐标精确定位）
+- 交互编辑（WebUI 点选/框选标注 + `<point>` / `<bbox>` 坐标精确定位）
 - 原生多语种文字渲染（14 种语言）
-- 自动本地保存
-- 一键分辨率切换（1K / 2K）
+- 自动本地保存（带会话记录）
+- 一键分辨率切换（1K / 2K，支持自定义宽高）
 
 **内置模板分类（17 类共 91 个模板）：**
 
@@ -53,12 +53,12 @@ cd skills/seedream5pro-image
 # 设置 API Key（或创建 .env 文件自动加载）
 export ARK_API_KEY="your-api-key"
 
-# 方式一：使用 uv 直接运行（推荐）
-uv run seedream generate --prompt "一只橘猫坐在窗台上，午后阳光" --size 2K
-
-# 方式二：安装为全局工具
+# 安装为全局工具（推荐）
 uv tool install .
 seedream generate --prompt "一只橘猫坐在窗台上，午后阳光" --size 2K
+
+# 或使用 uv run 直接运行
+uv run seedream generate --prompt "一只橘猫坐在窗台上，午后阳光" --size 2K
 
 # 图生图（URL 或本地路径）
 seedream generate \
@@ -66,10 +66,8 @@ seedream generate \
     --images "https://example.com/cat.jpg" \
     --size 1K
 
-# 交互编辑（使用坐标定位）
-seedream generate \
-    --prompt "把图1<bbox>179 283 796 986</bbox>区域中的狗换成猫" \
-    --images "https://example.com/photo.jpg"
+# 交互编辑（启动 WebUI）
+seedream webui --preload /path/to/photo.jpg
 ```
 
 详细用法请参阅 [SKILL.md](skills/seedream5pro-image/SKILL.md)。
@@ -85,9 +83,9 @@ xiaoka-skills/
 │       ├── SKILL.md         # 技能清单
 │       ├── pyproject.toml   # 包配置
 │       ├── src/seedream/    # 可安装的 Python 包
-│       │   ├── cli.py       # CLI 入口（seedream generate/session/webui）
+│       │   ├── cli.py       # CLI 入口（generate/session/webui）
 │       │   ├── generate.py  # 核心生成逻辑
-│       │   ├── session.py   # Session 读写工具
+│       │   ├── session.py   # Session 管理
 │       │   ├── webui.py     # 交互编辑 WebUI 后端
 │       │   ├── config.py    # 配置常量
 │       │   └── static/      # WebUI 前端文件

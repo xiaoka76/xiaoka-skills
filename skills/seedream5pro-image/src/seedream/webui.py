@@ -15,7 +15,6 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -92,6 +91,20 @@ class SaveImage(BaseModel):
     dataUrl: str
     naturalWidth: int = 0
     naturalHeight: int = 0
+    x: float = 0
+    y: float = 0
+    width: float = 0
+    height: float = 0
+
+
+class AnnotationData(BaseModel):
+    """保存接口中的标注条目"""
+
+    id: int
+    type: str  # "point" | "bbox"
+    image_label: str = ""
+    normalized_coords: list[int] = []
+    token: str = ""
 
 
 class SaveRequest(BaseModel):
@@ -101,6 +114,7 @@ class SaveRequest(BaseModel):
     user_intent: str = ""
     intent_html: str = ""
     images: list[SaveImage] = []
+    annotations: list[AnnotationData] = []
 
 
 def _error(message: str, code: int = 400) -> JSONResponse:
@@ -134,13 +148,14 @@ def create_app() -> FastAPI:
 
     @app.get("/api/session-info")
     def session_info() -> dict[str, Any]:
-        """返回 session 信息，包括图片（含 dataUrl）和已保存的 prompt/intent"""
+        """返回 session 信息，包括图片（含 dataUrl）、标注和已保存的 prompt/intent"""
         data = _session.get("data", {})
         images = data.get("images", [])
         return {
             "session_id": data.get("session_id", ""),
             "status": data.get("state_machine", {}).get("current_state", "unknown"),
             "images": images,
+            "annotations": data.get("annotations", []),
             "prompt": data.get("prompt", ""),
             "user_intent": data.get("user_intent", ""),
             "intent_html": data.get("intent_html", ""),
@@ -216,38 +231,35 @@ def create_app() -> FastAPI:
                 "dataUrl": data_url,
                 "naturalWidth": img.naturalWidth,
                 "naturalHeight": img.naturalHeight,
+                "x": img.x,
+                "y": img.y,
+                "width": img.width,
+                "height": img.height,
             })
 
-        # 构建标注信息（从 prompt 中提取 <point>/<bbox> 标签）
+        # 使用前端直接传来的标注数据（保持 ID 一致，避免重新解析导致不匹配）
         annotations: list[dict[str, Any]] = []
-        aid = 0
-        for match in re.finditer(r"(图\d+)<point>(\d+)\s+(\d+)</point>", prompt):
-            aid += 1
+        for ann in payload.annotations:
             annotations.append({
-                "id": aid,
-                "type": "point",
-                "image_label": match.group(1),
-                "normalized_coords": [int(match.group(2)), int(match.group(3))],
-                "token": match.group(0),
-            })
-        for match in re.finditer(r"(图\d+)<bbox>(\d+)\s+(\d+)\s+(\d+)\s+(\d+)</bbox>", prompt):
-            aid += 1
-            annotations.append({
-                "id": aid,
-                "type": "bbox",
-                "image_label": match.group(1),
-                "normalized_coords": [
-                    int(match.group(2)),
-                    int(match.group(3)),
-                    int(match.group(4)),
-                    int(match.group(5)),
-                ],
-                "token": match.group(0),
+                "id": ann.id,
+                "type": ann.type,
+                "image_label": ann.image_label,
+                "normalized_coords": ann.normalized_coords,
+                "token": ann.token,
             })
 
         now = _timestamp()
+        # 只更新/追加图片，不替换已有图片，防止丢失未在本次保存中引用的图片
         if saved_images:
-            session_data["images"] = saved_images
+            existing_images = session_data.get("images", [])
+            # 用 dataUrl 去重：已存在的图片保留，新图片追加
+            existing_urls = {img.get("dataUrl", "") for img in existing_images}
+            merged = list(existing_images)
+            for img in saved_images:
+                if img.get("dataUrl", "") not in existing_urls:
+                    merged.append(img)
+                    existing_urls.add(img.get("dataUrl", ""))
+            session_data["images"] = merged
         session_data["annotations"] = annotations
         session_data["prompt"] = prompt
         session_data["user_intent"] = user_intent

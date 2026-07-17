@@ -6,8 +6,10 @@ Seedream 5.0 Pro - 图像生成核心函数模块
 """
 
 import base64
+import hashlib
 import os
 import uuid
+from pathlib import Path
 
 import httpx
 
@@ -194,6 +196,40 @@ def _resolve_image_path(path: str) -> str:
     return f"data:image/{img_format};base64,{b64_data}"
 
 
+def _save_ref_images(ref_images: str | list[str], output_dir: str) -> list[dict[str, str]]:
+    """
+    将参考图以哈希值为文件名保存到输出目录。
+
+    :param ref_images: 参考图 data URL 或 URL 列表
+    :param output_dir: 输出目录
+    :return: 参考图信息列表，每项包含 {index, path, label}
+    """
+    saved: list[dict[str, str]] = []
+    refs = ref_images if isinstance(ref_images, list) else [ref_images]
+    for i, ref in enumerate(refs):
+        if not ref.startswith("data:image/"):
+            # 网络 URL 只记录链接
+            saved.append({"index": str(i + 1), "path": ref, "label": ref})
+            continue
+        try:
+            header, b64_data = ref.split(",", 1)
+            fmt = header.split(";")[0].split("/")[1]  # png, jpeg, etc.
+            img_data = base64.b64decode(b64_data)
+            h = hashlib.md5(img_data).hexdigest()[:12]
+            ext = "png" if fmt == "png" else "jpg"
+            local_path = os.path.join(output_dir, f"{h}.{ext}")
+            with open(local_path, "wb") as f:
+                f.write(img_data)
+            saved.append({
+                "index": str(i + 1),
+                "path": os.path.abspath(local_path),
+                "label": f"[Base64] {fmt}, ~{len(img_data) / 1024:.0f} KB",
+            })
+        except (ValueError, IndexError, base64.binascii.Error):
+            saved.append({"index": str(i + 1), "path": "", "label": _ref_label(ref)})
+    return saved
+
+
 def _save_metadata(item: dict, image_paths: list[str], output_dir: str, filename: str) -> str:
     """将生成参数和结果保存为同名 .md 元数据文件。
 
@@ -216,13 +252,14 @@ def _save_metadata(item: dict, image_paths: list[str], output_dir: str, filename
     ]
     ref_images = item.get("image")
     if ref_images:
-        if isinstance(ref_images, list):
-            lines.append("- **参考图**:")
-            for i, ref in enumerate(ref_images):
-                label = _ref_label(ref)
-                lines.append(f"  - [{i + 1}] {label}")
-        else:
-            lines.append(f"- **参考图**: {_ref_label(ref_images)}")
+        lines.append("")
+        lines.append("## 参考图")
+        ref_info_list = _save_ref_images(ref_images, output_dir)
+        for info in ref_info_list:
+            if info["path"]:
+                lines.append(f"- [{info['index']}] `{info['path']}` ({info['label']})")
+            else:
+                lines.append(f"- [{info['index']}] {info['label']}")
     lines.extend([
         "",
         "## 输出文件",
@@ -269,7 +306,7 @@ def single_generate(
     # 强制 b64_json 模式确保本地保存
     item["response_format"] = "b64_json"
 
-    output_format = item.get("output_format", "jpeg")
+    output_format = item.get("output_format", "png")
     ext = "png" if output_format == "png" else "jpg"
     uid = uuid.uuid4().hex[:12]
 
@@ -324,6 +361,7 @@ def single_generate(
                 "image_path": results[0],  # 单图场景返回第一张
                 "metadata_path": metadata_path,
                 "all_images": results,
+                "uid": uid,
                 "model": MODEL_ID,
                 "output_dir": os.path.abspath(output_dir),
                 "error": None,
@@ -349,7 +387,7 @@ def single_generate(
         }
 
 
-def generate_from_session(session_data: dict, **kwargs) -> dict:
+def generate_from_session(session_data: dict, session_path: str | None = None, **kwargs) -> dict:
     """
     从 session JSON 数据执行图像生成。
 
@@ -359,6 +397,7 @@ def generate_from_session(session_data: dict, **kwargs) -> dict:
     :param session_data: session.json 的 dict 内容
         - prompt (str): 提示词（含 <point>/<bbox> 坐标）
         - images (list): 图片列表，每个元素包含 dataUrl 等字段
+    :param session_path: session.json 文件路径（可选），提供后自动将输出保存到 session 的 output/ 目录
     :param kwargs: 传递给 single_generate 的其他参数
     :return: single_generate 的返回结果
     """
@@ -369,4 +408,10 @@ def generate_from_session(session_data: dict, **kwargs) -> dict:
     if data_urls:
         task["image"] = data_urls if len(data_urls) > 1 else data_urls[0]
     task.update(kwargs)
-    return single_generate(task)
+
+    # 如果提供了 session_path，自动设置输出目录为 session 的 output/ 子目录
+    if session_path:
+        session_dir = Path(session_path).parent
+        kwargs.setdefault("output_dir", str(session_dir / "output"))
+
+    return single_generate(task, **kwargs)

@@ -10,9 +10,14 @@ dependencies = [
     "httpx>=0.28",
     "python-dotenv>=1.0",
     "pydantic>=2.0",
+    "python-multipart>=0.0.18",
+    "annotated-doc>=0.0.4",
 ]
 
 [project.scripts]
 seedream = "seedream.cli:app"
+
+[tool.setuptools.package-data]
+"seedream" = ["static/*"]
 
 [tool.uv.sources]
