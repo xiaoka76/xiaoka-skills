@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""
+Seedream 5.0 Pro - 独立图像生成脚本
+
+专为 doubao-seedream-5-0-pro-260628 设计，无外部依赖（仅 httpx）。
+支持文生图、图生图、交互编辑（<point>/<bbox>），自动保存到本地。
+
+用法:
+  python generate.py -p "一只猫" --version 5.0-pro
+  python generate.py -p "把图1<bbox>179 283 796 986</bbox>的主体放到图2<bbox>118 331 933 871</bbox>位置" --image "url1" --images "url2"
+"""
+
+import argparse
+import asyncio
+import base64
+import json
+import os
+import re
+import sys
+from datetime import datetime
+from typing import Dict, List, Tuple
+
+import httpx
+
+# ── 模型配置 ──────────────────────────────────────────────────────────────────
+MODEL_ID = "doubao-seedream-5-0-pro-260628"
+
+API_KEY = (
+    os.getenv("ARK_API_KEY")
+    or os.getenv("MODEL_IMAGE_API_KEY")
+    or os.getenv("MODEL_AGENT_API_KEY")
+)
+API_BASE = (
+    os.getenv("ARK_BASE_URL")
+    or os.getenv("MODEL_IMAGE_API_BASE")
+    or "https://ark.cn-beijing.volces.com/api/v3"
+).rstrip("/")
+API_BASE = re.sub(r"/api/coding/(?:lite/|pro/)?v3$", "/api/v3", API_BASE)
+
+DEFAULT_OUTPUT_DIR = "seedream-output"
+SUPPORTED_IMAGE_FORMATS = {"jpeg", "png", "webp", "bmp", "tiff", "gif", "heic", "heif"}
+MAX_REF_IMAGES = 10
+
+
+# ── 工具函数 ──────────────────────────────────────────────────────────────────
+
+def normalize_coords(
+    img_width: int, img_height: int,
+    *coords: int,
+) -> tuple:
+    """
+    将像素坐标转换为 Seedream 5.0 Pro 归一化坐标 (0-999)。
+
+    点选: normalize_coords(w, h, x, y) -> (x_norm, y_norm)
+    框选: normalize_coords(w, h, x1, y1, x2, y2) -> (x1_norm, y1_norm, x2_norm, y2_norm)
+
+    坐标系统: (0,0) = 左上角, (999,999) = 右下角
+    公式: norm = round(px / 尺寸 * 1000)
+    """
+    n = len(coords)
+    if n == 2:
+        x, y = coords
+        return (round(x / img_width * 1000), round(y / img_height * 1000))
+    elif n == 4:
+        x1, y1, x2, y2 = coords
+        return (
+            round(x1 / img_width * 1000), round(y1 / img_height * 1000),
+            round(x2 / img_width * 1000), round(y2 / img_height * 1000),
+        )
+    else:
+        raise ValueError("需要 2 个坐标（点选）或 4 个坐标（框选）")
+
+
+def _slugify(text: str, max_len: int = 48) -> str:
+    slug = re.sub(r'[^\w\s\u4e00-\u9fff-]', '', text)
+    slug = re.sub(r'[\s/]+', '-', slug.strip())
+    slug = re.sub(r'-{2,}', '-', slug)
+    slug = slug[:max_len].rstrip('-')
+    return slug if slug else "generated-image"
+
+
+def _timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+# ── API 调用 ──────────────────────────────────────────────────────────────────
+
+def _get_headers() -> dict:
+    if not API_KEY:
+        raise ValueError("请设置 ARK_API_KEY 或 MODEL_IMAGE_API_KEY 或 MODEL_AGENT_API_KEY 环境变量")
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_KEY}",
+    }
+
+
+def _build_request_body(item: dict) -> dict:
+    """构建 5.0-pro 专用请求体"""
+    body = {
+        "model": MODEL_ID,
+        "prompt": item.get("prompt", ""),
+    }
+
+    supported_fields = [
+        "size", "response_format", "watermark", "image",
+        "output_format", "optimize_prompt_options",
+    ]
+    for field in supported_fields:
+        if field in item and item[field] is not None:
+            body[field] = item[field]
+
+    return body
+
+
+async def _call_api(item: dict, timeout: int) -> dict:
+    url = f"{API_BASE}/images/generations"
+    body = _build_request_body(item)
+    async with httpx.AsyncClient(timeout=float(timeout)) as client:
+        resp = await client.post(url, headers=_get_headers(), json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _download_image(url: str, output_dir: str, filename: str, ext: str) -> str:
+    """从 URL 下载图片并保存到本地"""
+    os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, f"{filename}.{ext}")
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        with open(path, "wb") as f:
+            f.write(resp.content)
+    return os.path.abspath(path)
+
+
+def _save_b64(b64_data: str, output_dir: str, filename: str, ext: str) -> str:
+    """解码 base64 并保存到本地"""
+    os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, f"{filename}.{ext}")
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(b64_data))
+    return os.path.abspath(path)
+
+
+async def single_generate(
+    item: dict,
+    timeout: int = 300,
+    output_dir: str = DEFAULT_OUTPUT_DIR,
+) -> Dict:
+    """
+    执行一次图像生成（文生图 / 图生图 / 交互编辑）。
+
+    Args:
+        item: 任务参数
+            - prompt (str, 必填): 提示词
+            - size (str, 可选): 尺寸，默认 "2K"
+            - image (str/list, 可选): 参考图 URL 或 URL 列表
+            - output_format (str, 可选): "png" 或 "jpeg"
+            - watermark (bool, 可选): 是否加水印
+            - optimize_prompt_options (dict, 可选): 提示词优化配置
+        timeout: API 超时秒数
+        output_dir: 图片保存目录
+
+    Returns:
+        {
+            "status": "success" | "error",
+            "image_path": "本地路径" | None,
+            "model": "doubao-seedream-5-0-pro-260628",
+            "output_dir": "目录路径",
+            "error": "错误信息" | None
+        }
+    """
+    # 强制 b64_json 模式确保本地保存
+    item["response_format"] = "b64_json"
+
+    prompt = item.get("prompt", "")
+    slug = _slugify(prompt.split(".")[0][:60])
+    ts = _timestamp()
+    output_format = item.get("output_format", "jpeg")
+    ext = "png" if output_format == "png" else "jpg"
+
+    try:
+        response = await _call_api(item, timeout)
+
+        if "error" in response:
+            return {
+                "status": "error",
+                "image_path": None,
+                "model": MODEL_ID,
+                "output_dir": os.path.abspath(output_dir),
+                "error": str(response["error"]),
+            }
+
+        data_list = response.get("data", [])
+        if not data_list:
+            return {
+                "status": "error",
+                "image_path": None,
+                "model": MODEL_ID,
+                "output_dir": os.path.abspath(output_dir),
+                "error": "API 返回空数据",
+            }
+
+        results = []
+        for i, img_data in enumerate(data_list):
+            if "error" in img_data:
+                continue
+
+            filename = f"{slug}-{ts}-{i}" if len(data_list) > 1 else f"{slug}-{ts}"
+            local_path = None
+
+            # 优先 b64_json
+            b64 = img_data.get("b64_json")
+            if b64:
+                local_path = _save_b64(b64, output_dir, filename, ext)
+            else:
+                url = img_data.get("url")
+                if url:
+                    local_path = await _download_image(url, output_dir, filename, ext)
+
+            if local_path:
+                results.append(local_path)
+
+        if results:
+            return {
+                "status": "success",
+                "image_path": results[0],  # 单图场景返回第一张
+                "all_images": results,
+                "model": MODEL_ID,
+                "output_dir": os.path.abspath(output_dir),
+                "error": None,
+            }
+        else:
+            return {
+                "status": "error",
+                "image_path": None,
+                "model": MODEL_ID,
+                "output_dir": os.path.abspath(output_dir),
+                "error": "生成失败：所有图片数据均为空",
+            }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "image_path": None,
+            "model": MODEL_ID,
+            "output_dir": os.path.abspath(output_dir),
+            "error": str(e),
+        }
+
+
+# ── CLI 入口 ──────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Seedream 5.0 Pro 图像生成 - 文生图 / 图生图 / 交互编辑，自动保存到本地"
+    )
+    parser.add_argument("--prompt", "-p", required=True, help="提示词 / 编辑指令")
+    parser.add_argument("--image", "-i", default=None, help="参考图 URL（单张）")
+    parser.add_argument("--images", nargs="+", default=None, help="多张参考图 URL（最多 10 张）")
+    parser.add_argument("--size", "-s", default="2K", help="分辨率: 1K / 2K / 宽x高（默认 2K）")
+    parser.add_argument("--output-format", choices=["png", "jpeg"], default="jpeg", help="输出格式")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help=f"保存目录（默认 {DEFAULT_OUTPUT_DIR}）")
+    parser.add_argument("--no-watermark", action="store_true", help="关闭水印")
+    parser.add_argument("--optimize", choices=["standard", "fast"], default=None, help="提示词优化模式")
+    parser.add_argument("--timeout", "-t", type=int, default=300, help="API 超时秒数（默认 300）")
+    parser.add_argument("--json", action="store_true", help="以 JSON 格式输出结果")
+
+    args = parser.parse_args()
+
+    if not API_KEY:
+        print("错误: 请设置 ARK_API_KEY 环境变量")
+        sys.exit(1)
+
+    # 构建请求
+    task = {
+        "prompt": args.prompt,
+        "size": args.size,
+        "output_format": args.output_format,
+        "watermark": not args.no_watermark,
+    }
+
+    if args.optimize:
+        task["optimize_prompt_options"] = {"mode": args.optimize}
+
+    # 参考图
+    if args.images:
+        if len(args.images) > MAX_REF_IMAGES:
+            print(f"错误: 最多支持 {MAX_REF_IMAGES} 张参考图")
+            sys.exit(1)
+        task["image"] = args.images
+    elif args.image:
+        task["image"] = args.image
+
+    # 打印信息
+    print(f"  Seedream 5.0 Pro 图像生成")
+    print(f"  Prompt: {args.prompt[:80]}{'...' if len(args.prompt) > 80 else ''}")
+    print(f"  Size: {args.size}")
+    print(f"  输出目录: {args.output_dir}")
+    print(f"  格式: {args.output_format}")
+    if args.image or args.images:
+        print(f"  参考图: {'✅' if args.image else f'{len(args.images)} 张'}")
+    if args.optimize:
+        print(f"  优化模式: {args.optimize}")
+    print()
+
+    # 执行
+    result = asyncio.run(single_generate(task, timeout=args.timeout, output_dir=args.output_dir))
+
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        if result["status"] == "success":
+            print(f"  ✅ 生成成功!")
+            size_kb = os.path.getsize(result["image_path"]) / 1024 if os.path.exists(result["image_path"]) else 0
+            print(f"  📄 {result['image_path']} ({size_kb:.0f} KB)")
+            if len(result.get("all_images", [])) > 1:
+                print(f"  📄 共 {len(result['all_images'])} 张图片")
+        else:
+            print(f"  ❌ 生成失败: {result['error']}")
+
+
+if __name__ == "__main__":
+    main()
