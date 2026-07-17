@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TouchEdit Study Demo</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <strong>TouchEdit Study</strong>
+        <span class="muted">学习版：上传图片、缩放画布、点选/框选，并本地预览模型输入</span>
+      </div>
+      <label class="upload-button">
+        上传图片
+        <input id="fileInput" type="file" accept="image/*" multiple />
+      </label>
+    </header>
+
+    <main class="layout">
+      <aside class="toolbar">
+        <button class="tool active" data-mode="normal">1 普通</button>
+        <button class="tool" data-mode="point">2 点击</button>
+        <button class="tool" data-mode="bbox">3 框选</button>
+        <div class="hint">
+          <p><b>普通</b>：拖图片；拖空白平移画布。</p>
+          <p><b>点击</b>：点图上位置，追加 <code>&lt;point&gt;</code>。</p>
+          <p><b>框选</b>：在图上拖框，追加 <code>&lt;bbox&gt;</code>。</p>
+          <p>滚轮缩放，坐标按图片自身归一化到 0-1000。</p>
+        </div>
+      </aside>
+
+      <section id="viewport" class="viewport">
+        <div id="world" class="world"></div>
+        <div class="zoom-badge" id="zoomBadge">100%</div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-section">
+          <h2>编辑指令</h2>
+          <div
+            id="promptInput"
+            class="prompt-editor empty"
+            contenteditable="true"
+            data-placeholder="例如：把图1 <point>500 500</point> 的狗变成猫"
+          ></div>
+          <div id="annotationPreview" class="annotation-preview empty hidden">暂无点选/框选预览。</div>
+          <div class="row">
+            <button id="generateBtn" class="primary">生成</button>
+            <button id="clearPromptBtn">清空指令</button>
+          </div>
+          <div id="status" class="status">等待上传图片。</div>
+        </div>
+
+        <div class="panel-section">
+          <h2>图片列表</h2>
+          <div id="imageList" class="image-list"></div>
+        </div>
+
+        <div class="panel-section">
+          <h2>模型输入预览</h2>
+          <div id="result" class="result"></div>
+        </div>
+      </aside>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
