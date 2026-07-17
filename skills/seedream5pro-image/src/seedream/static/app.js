@@ -332,7 +332,7 @@ function makeAnnotationChip(ann, image) {
   body.className = "annotation-inline-body";
   const title = document.createElement("span");
   title.className = "annotation-inline-title";
-  title.innerHTML = `<i style="background:${ann.color}"></i>${image.label} ${ann.type === "point" ? "点击" : "框选"} #${ann.id}`;
+  title.innerHTML = `<i style="background:${ann.color}"></i>${escapeHtml(image.label)} ${ann.type === "point" ? "点击" : "框选"} #${ann.id}`;
   const token = document.createElement("code");
   token.textContent = ann.token;
   body.appendChild(title);
@@ -453,7 +453,7 @@ function renderImageList() {
     item.className = "image-item";
     const meta = document.createElement("div");
     meta.className = "image-item-meta";
-    meta.innerHTML = `<b>${image.label}</b><span>${image.name} (${image.naturalWidth}x${image.naturalHeight})</span>`;
+    meta.innerHTML = `<b>${escapeHtml(image.label)}</b><span>${escapeHtml(image.name)} (${image.naturalWidth}x${image.naturalHeight})</span>`;
 
     const actions = document.createElement("div");
     actions.className = "image-item-actions";
@@ -560,7 +560,7 @@ function renderAnnotationPreview() {
     info.className = "annotation-info";
     const title = document.createElement("div");
     title.className = "annotation-title";
-    title.innerHTML = `<span style="background:${ann.color}"></span>${image.label} ${ann.type === "point" ? "点击" : "框选"} #${ann.id}`;
+    title.innerHTML = `<span style="background:${ann.color}"></span>${escapeHtml(image.label)} ${ann.type === "point" ? "点击" : "框选"} #${ann.id}`;
     const token = document.createElement("code");
     token.textContent =
       ann.token ||

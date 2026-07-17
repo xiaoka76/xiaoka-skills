@@ -18,7 +18,6 @@ from typing import Annotated, Literal
 
 import typer
 import uvicorn
-from dotenv import load_dotenv
 
 from seedream.config import API_KEY, DEFAULT_OUTPUT_DIR, MAX_REF_IMAGES
 from seedream.generate import _resolve_image_path, single_generate
@@ -32,9 +31,6 @@ from seedream.session import (
     update_generate_session,
 )
 from seedream.webui import create_app, init_session_global
-
-# 加载 .env 文件
-load_dotenv()
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -299,10 +295,14 @@ def list_images(
 @app.command()
 def webui(
     port: Annotated[int, typer.Option("--port", "-p", help="端口号（默认 8090）")] = 8090,
+    host: Annotated[str, typer.Option("--host", help="绑定的主机地址（默认 127.0.0.1；设为 0.0.0.0 可远程访问）")] = "127.0.0.1",
     preload: Annotated[list[str] | None, typer.Option("--preload", help="预加载图片路径（可多次指定）")] = None,
 ) -> None:
     """
     Seedream 5.0 Pro 交互编辑 WebUI - 图片上传、点选/框选标注、编辑意图保存
+
+    默认仅监听本机回环地址（127.0.0.1）以保证安全。如需从局域网访问，
+    显式传入 --host 0.0.0.0。
     """
     preload_paths = preload or []
 
@@ -320,9 +320,10 @@ def webui(
     typer.echo("  ─────────────────────────────────────")
 
     web_app = create_app()
-    typer.echo(f"  服务地址: http://localhost:{port}")
-    typer.echo(f"  远程访问: http://<your-ip>:{port}")
+    typer.echo(f"  服务地址: http://{host}:{port}")
+    if host in ("0.0.0.0", "::"):
+        typer.echo(f"  远程访问: http://<your-ip>:{port}")
     typer.echo("  按 Ctrl+C 停止服务")
     typer.echo("")
 
-    uvicorn.run(web_app, host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run(web_app, host=host, port=port, log_level="info")

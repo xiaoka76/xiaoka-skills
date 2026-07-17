@@ -82,9 +82,9 @@ seedream generate --help
 
 ```bash
 export ARK_API_KEY="your-api-key"
-# 或创建 .env 文件（自动加载）
-# ARK_API_KEY=your-api-key
 ```
+
+API Key 仅通过环境变量配置（支持 `ARK_API_KEY` / `MODEL_IMAGE_API_KEY` / `MODEL_AGENT_API_KEY`，按优先级读取）。
 
 ## 用法
 
@@ -250,7 +250,7 @@ y_norm = round(y_px / 图片高度 * 1000)
 ### 启动 WebUI
 
 ```bash
-# 基本启动
+# 基本启动（默认仅监听本机回环地址 127.0.0.1）
 seedream webui
 
 # 指定端口
@@ -258,6 +258,9 @@ seedream webui --port 8090
 
 # 预加载图片（可多次指定）
 seedream webui --preload /path/to/image1.png --preload /path/to/image2.jpg
+
+# 允许局域网远程访问（显式开启，存在安全风险请谨慎使用）
+seedream webui --host 0.0.0.0
 ```
 
 启动后命令行会输出：
@@ -267,9 +270,11 @@ seedream webui --preload /path/to/image1.png --preload /path/to/image2.jpg
   会话 ID: a1b2c3d4e5f6
   Session 文件: .seedream/edit/a1b2c3d4e5f6/session.json
   ─────────────────────────────────────
-  服务地址: http://localhost:8090
-  远程访问: http://<your-ip>:8090
+  服务地址: http://127.0.0.1:8090
+  按 Ctrl+C 停止服务
 ```
+
+> 默认绑定 `127.0.0.1`，仅本机可访问以保证安全。如需从局域网访问，显式传入 `--host 0.0.0.0`，此时会额外打印远程访问地址。
 
 ### Session 状态机
 
@@ -543,7 +548,7 @@ seedream generate -p "生成一张高仿真的直播带货截图风格视觉图.
 ## 常见问题
 
 ### Q: 图片保存在哪里？
-A: 普通文生图/图生图保存在 `.seedream/generate/<session_id>/output/`，交互编辑生成的图片保存在 `.seedream/edit/<session_id>/output/`。可通过 `--output-dir` 自定义基础目录。
+A: 普通文生图/图生图保存在 `.seedream/generate/<session_id>/output/`，交互编辑生成的图片保存在 `.seedream/edit/<session_id>/output/`。输出基础目录由 `DEFAULT_OUTPUT_DIR` 常量决定，默认为当前工作目录下的 `.seedream/`。
 
 ### Q: 为什么没有 `--group` 参数？
 A: 5.0 Pro 不支持批量生成（文生组图）。如需该功能，请使用 5.0 lite。

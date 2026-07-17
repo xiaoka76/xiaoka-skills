@@ -12,11 +12,12 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import struct
 import uuid
 import warnings
 from pathlib import Path
 
-from .config import DEFAULT_OUTPUT_DIR, iso_timestamp
+from .config import DEFAULT_OUTPUT_DIR, iso_timestamp, ref_label
 
 # ── 状态机常量 ─────────────────────────────────────────────────────────────────
 
@@ -112,12 +113,13 @@ def init_session(preload_paths: list[str]) -> tuple[dict, Path]:
         data = p.read_bytes()
         mime = mimetypes.guess_type(str(p))[0] or "image/png"
         b64 = base64.b64encode(data).decode("ascii")
+        width, height = read_image_dimensions(data)
         preloaded_images.append({
             "inputLabel": f"图{len(preloaded_images) + 1}",
             "name": p.name,
             "dataUrl": f"data:{mime};base64,{b64}",
-            "naturalWidth": 0,
-            "naturalHeight": 0,
+            "naturalWidth": width,
+            "naturalHeight": height,
         })
 
     now = iso_timestamp()
@@ -149,6 +151,86 @@ def init_session(preload_paths: list[str]) -> tuple[dict, Path]:
 # ── 辅助函数 ──────────────────────────────────────────────────────────────────
 
 
+def read_image_dimensions(data: bytes) -> tuple[int, int]:
+    """
+    从图片字节流头部解析宽高（支持 PNG/JPEG/GIF/WebP/BMP，无第三方依赖）。
+
+    :param data: 图片原始字节
+    :return: (width, height)，无法识别时返回 (0, 0)
+    """
+    # 低于 8 字节无法匹配任何格式签名；各格式分支内部用 try/except 防御短数据
+    if len(data) < 8:
+        return (0, 0)
+
+    # PNG: IHDR chunk 中 width/height 为 4 字节大端
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        try:
+            width, height = struct.unpack(">II", data[16:24])
+            return (width, height)
+        except struct.error:
+            return (0, 0)
+
+    # GIF: width/height 为 2 字节小端，偏移 6
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        try:
+            width, height = struct.unpack("<HH", data[6:10])
+            return (width, height)
+        except struct.error:
+            return (0, 0)
+
+    # BMP: width/height 为 4 字节小端，偏移 18
+    if data[:2] == b"BM":
+        try:
+            width, height = struct.unpack("<ii", data[18:26])
+            return (abs(width), abs(height))
+        except struct.error:
+            return (0, 0)
+
+    # WebP: RIFF....WEBP，按子格式解析
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        chunk = data[12:16]
+        try:
+            if chunk == b"VP8 " and len(data) >= 30:
+                # lossy：宽高在 chunk 头后第 6 字节起，2 字节小端
+                width, height = struct.unpack("<HH", data[26:30])
+                return (width & 0x3FFF, height & 0x3FFF)
+            if chunk == b"VP8L" and len(data) >= 25:
+                # lossless：1 字节签名后 14+14 位
+                bits = int.from_bytes(data[21:25], "little")
+                width = (bits & 0x3FFF) + 1
+                height = ((bits >> 14) & 0x3FFF) + 1
+                return (width, height)
+            if chunk == b"VP8X" and len(data) >= 30:
+                # extended：3 字节小端宽高（值-1）
+                width = int.from_bytes(data[24:27], "little") + 1
+                height = int.from_bytes(data[27:30], "little") + 1
+                return (width, height)
+        except struct.error:
+            return (0, 0)
+
+    # JPEG: 扫描 SOF 标记
+    if data[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(data):
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            marker = data[i + 1]
+            # SOF 标记范围 0xC0~0xCF，排除 0xC4(DHT)/0xC8(JPG)/0xCC(DAC)
+            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                height, width = struct.unpack(">HH", data[i + 5:i + 9])
+                return (width, height)
+            # 跳过本段：2 字节大端长度
+            if i + 4 <= len(data):
+                seg_len = struct.unpack(">H", data[i + 2:i + 4])[0]
+                i += 2 + seg_len
+            else:
+                break
+        return (0, 0)
+
+    return (0, 0)
+
+
 def format_coords(coords: list[int]) -> str:
     """将坐标列表格式化为空格分隔的字符串。"""
     return " ".join(str(c) for c in coords)
@@ -171,24 +253,6 @@ def data_url_summary(data_url: str) -> str:
         return f"[Base64] {mime}, ~{size_kb} KB"
     except (IndexError, ValueError):
         return "[Base64]"
-
-
-# ── 引用图摘要 ─────────────────────────────────────────────────────────────────
-
-
-def _ref_label(ref: str) -> str:
-    """
-    为参考图生成友好标签，避免将完整 base64 数据写入元数据。
-
-    :param ref: 参考图 URL 或 base64 data URI
-    :return: 友好标签字符串
-    """
-    if ref.startswith("data:image/"):
-        fmt_end = ref.index(";")
-        fmt = ref[11:fmt_end]
-        size_kb = len(ref) * 3 // 4 / 1024
-        return f"[Base64] {fmt}, ~{size_kb:.0f} KB"
-    return ref
 
 
 # ── 生成会话管理 ────────────────────────────────────────────────────────────────
@@ -228,7 +292,7 @@ def init_generate_session(task_data: dict) -> tuple[dict, Path]:
     ref_images = task_data.get("image")
     if ref_images:
         ref_list: list[str] = ref_images if isinstance(ref_images, list) else [ref_images]
-        session_data["ref_images"] = [_ref_label(r) for r in ref_list]
+        session_data["ref_images"] = [ref_label(r) for r in ref_list]
 
     session_path = session_dir / "session.json"
     save_session(session_path, session_data)

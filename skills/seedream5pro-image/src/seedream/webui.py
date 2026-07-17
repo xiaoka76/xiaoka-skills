@@ -19,8 +19,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import typer
-import uvicorn
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,10 +26,10 @@ from pydantic import BaseModel
 
 from seedream.config import DEFAULT_OUTPUT_DIR
 from seedream.session import (
-    STATE_CREATED,
     STATE_EDITING,
     STATE_SAVED,
     init_session,
+    read_image_dimensions,
     transition_state,
 )
 
@@ -39,6 +37,10 @@ from seedream.session import (
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_PORT = 8090
+# 单个上传文件大小上限（字节），与 API 30MB 限制对齐并留出余量
+MAX_UPLOAD_BYTES = 30 * 1024 * 1024
+# 单次 /api/save 请求体大小上限（字节），防止超大 base64 payload 导致 OOM
+MAX_SAVE_BYTES = 100 * 1024 * 1024
 
 
 # ── Session 状态 ──────────────────────────────────────────────────────────────
@@ -167,6 +169,7 @@ def create_app() -> FastAPI:
         上传图片处理。
 
         接收 multipart/form-data 格式的图片文件，转换为 base64 后直接嵌入 session.json。
+        单个文件不超过 MAX_UPLOAD_BYTES，防止内存被撑爆。
         """
         session_data = _session.get("data", {})
         if not session_data:
@@ -178,16 +181,24 @@ def create_app() -> FastAPI:
             body_data = await upload_file.read()
             if not body_data:
                 continue
+            if len(body_data) > MAX_UPLOAD_BYTES:
+                return _error(
+                    f"文件 {upload_file.filename or idx} 超过 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB 限制",
+                    413,
+                )
             filename = upload_file.filename or f"image-{idx}.png"
             mime = upload_file.content_type or mimetypes.guess_type(filename)[0] or "image/png"
+            if not mime.startswith("image/"):
+                return _error(f"不支持的文件类型: {mime}", 415)
             b64 = base64.b64encode(body_data).decode("ascii")
             data_url = f"data:{mime};base64,{b64}"
+            width, height = read_image_dimensions(body_data)
             saved_images.append({
                 "inputLabel": f"图{existing_count + len(saved_images) + 1}",
                 "name": filename,
                 "dataUrl": data_url,
-                "naturalWidth": 0,
-                "naturalHeight": 0,
+                "naturalWidth": width,
+                "naturalHeight": height,
             })
 
         if not saved_images:
@@ -211,10 +222,16 @@ def create_app() -> FastAPI:
         保存会话数据。
 
         图片的 dataUrl 直接嵌入 session.json，不解码保存到磁盘。
+        请求体大小受 MAX_SAVE_BYTES 限制，防止超大 base64 payload 导致 OOM。
         """
         session_data = _session.get("data", {})
         if not session_data:
             return _error("session 未初始化", 500)
+
+        # 粗略估算 payload 大小（pydantic 已解析为对象，按 dataUrl 总长度估算）
+        total_bytes = sum(len(img.dataUrl) for img in payload.images) + len(payload.prompt) + len(payload.intent_html)
+        if total_bytes > MAX_SAVE_BYTES:
+            return _error(f"请求数据过大（{total_bytes // (1024 * 1024)}MB），超过 {MAX_SAVE_BYTES // (1024 * 1024)}MB 限制", 413)
 
         prompt = (payload.prompt or "").strip()
         user_intent = (payload.user_intent or "").strip()
@@ -285,39 +302,3 @@ def create_app() -> FastAPI:
     app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
     return app
-
-
-# ── CLI 入口（typer）──────────────────────────────────────────────────────────
-
-
-def main(port: int = 8090, preload: list[str] | None = None) -> None:
-    """
-    启动 WebUI 服务。
-
-    :param port: 服务端口号（默认 8090）
-    :param preload: 预加载图片路径列表
-    """
-    preload_paths = preload or []
-
-    # 确保 session 输出目录存在
-    session_output_dir = Path(DEFAULT_OUTPUT_DIR) / "edit"
-    session_output_dir.mkdir(parents=True, exist_ok=True)
-
-    typer.echo("  Seedream 5.0 Pro 交互编辑 WebUI")
-    typer.echo("  ─────────────────────────────────────")
-    session_info = init_session_global(preload_paths)
-    session_id = session_info.get("id", "")
-    session_path = session_info.get("path", "")
-    typer.echo(f"  会话 ID: {session_id}")
-    typer.echo(f"  Session 文件: {session_path}")
-    if preload_paths:
-        typer.echo(f"  预加载图片: {len(preload_paths)} 张")
-    typer.echo("  ─────────────────────────────────────")
-
-    app = create_app()
-    typer.echo(f"  服务地址: http://localhost:{port}")
-    typer.echo(f"  远程访问: http://<your-ip>:{port}")
-    typer.echo("  按 Ctrl+C 停止服务")
-    typer.echo("")
-
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

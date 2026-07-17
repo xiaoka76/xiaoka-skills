@@ -80,7 +80,7 @@ seedream generate --prompt "一只橘猫" --size 2K
 cd skills/seedream5pro-image
 uv run seedream generate --prompt "一只橘猫" --size 2K
 
-# 需要设置 API Key（或创建 .env 文件自动加载）
+# 需要设置 API Key（仅支持环境变量，不读取 .env 文件）
 export ARK_API_KEY="your-api-key"
 ```
 

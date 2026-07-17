@@ -9,7 +9,6 @@ import base64
 import hashlib
 import os
 import uuid
-from pathlib import Path
 
 import httpx
 
@@ -20,7 +19,7 @@ from .config import (
     IMAGE_FORMAT_MAP,
     MAX_REF_IMAGES,
     MODEL_ID,
-    SUPPORTED_IMAGE_FORMATS,
+    ref_label,
     timestamp,
 )
 
@@ -39,23 +38,29 @@ def normalize_coords(
     框选: normalize_coords(w, h, x1, y1, x2, y2) -> (x1_norm, y1_norm, x2_norm, y2_norm)
 
     坐标系统: (0,0) = 左上角, (999,999) = 右下角
-    公式: norm = round(px / 尺寸 * 1000)
+    公式: norm = clamp(round(px / 尺寸 * 1000), 0, 999)
 
-    :param img_width: 图片宽度（像素）
-    :param img_height: 图片高度（像素）
+    :param img_width: 图片宽度（像素，必须 > 0）
+    :param img_height: 图片高度（像素，必须 > 0）
     :param coords: 2 个坐标（点选）或 4 个坐标（框选）
-    :return: 归一化后的坐标元组
-    :raises ValueError: 坐标数量不是 2 或 4
+    :return: 归一化后的坐标元组，每个值被 clamp 到 [0, 999]
+    :raises ValueError: 坐标数量不是 2 或 4，或图片尺寸非正
     """
+    if img_width <= 0 or img_height <= 0:
+        raise ValueError(f"图片尺寸必须为正数，当前 width={img_width}, height={img_height}")
+
+    def _norm(px: int, size: int) -> int:
+        return max(0, min(999, round(px / size * 1000)))
+
     n = len(coords)
     if n == 2:
         x, y = coords
-        return (round(x / img_width * 1000), round(y / img_height * 1000))
+        return (_norm(x, img_width), _norm(y, img_height))
     elif n == 4:
         x1, y1, x2, y2 = coords
         return (
-            round(x1 / img_width * 1000), round(y1 / img_height * 1000),
-            round(x2 / img_width * 1000), round(y2 / img_height * 1000),
+            _norm(x1, img_width), _norm(y1, img_height),
+            _norm(x2, img_width), _norm(y2, img_height),
         )
     else:
         raise ValueError("需要 2 个坐标（点选）或 4 个坐标（框选）")
@@ -102,12 +107,27 @@ def _call_api(item: dict, timeout: int) -> dict:
     :param item: 任务参数
     :param timeout: API 超时秒数
     :return: API 返回的 JSON 响应
+    :raises httpx.HTTPStatusError: HTTP 非 2xx，错误信息包含响应体便于定位
+    :raises httpx.RequestError: 网络层错误（连接超时、DNS 失败等）
     """
     url = f"{API_BASE}/images/generations"
     body = _build_request_body(item)
     with httpx.Client(timeout=float(timeout)) as client:
         resp = client.post(url, headers=_get_headers(), json=body)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # 将 API 返回的错误体附加到异常信息，避免仅看到 "400 Bad Request" 这类无意义描述
+            detail = resp.text
+            try:
+                parsed = resp.json()
+                if isinstance(parsed, dict) and "error" in parsed:
+                    detail = str(parsed["error"])
+            except (ValueError, TypeError):
+                pass
+            raise httpx.HTTPStatusError(
+                f"HTTP {resp.status_code} {resp.reason_phrase}: {detail}",
+                request=resp.request,
+                response=resp,
+            )
         return resp.json()
 
 
@@ -144,21 +164,6 @@ def _save_b64(b64_data: str, output_dir: str, filename: str, ext: str) -> str:
     with open(path, "wb") as f:
         f.write(base64.b64decode(b64_data))
     return os.path.abspath(path)
-
-
-def _ref_label(ref: str) -> str:
-    """为参考图生成友好标签，避免将完整 base64 数据写入元数据。
-
-    :param ref: 参考图 URL 或 base64 data URI
-    :return: 友好标签字符串
-    """
-    if ref.startswith("data:image/"):
-        # Base64 data URI - 只记录格式和长度
-        fmt_end = ref.index(";")
-        fmt = ref[11:fmt_end]  # "data:image/<fmt>;..." 中提取 <fmt>
-        size_kb = len(ref) * 3 // 4 / 1024  # base64 解码后的近似字节数
-        return f"[Base64] {fmt}, ~{size_kb:.0f} KB"
-    return ref
 
 
 def _resolve_image_path(path: str) -> str:
@@ -204,6 +209,11 @@ def _save_ref_images(ref_images: str | list[str], output_dir: str) -> list[dict[
     :param output_dir: 输出目录
     :return: 参考图信息列表，每项包含 {index, path, label}
     """
+    # 格式名 -> 文件扩展名（jpeg 统一使用 .jpg，其余保留原始格式扩展名）
+    fmt_to_ext: dict[str, str] = {
+        "jpeg": "jpg", "png": "png", "webp": "webp", "bmp": "bmp",
+        "tiff": "tif", "gif": "gif", "heic": "heic", "heif": "heif",
+    }
     saved: list[dict[str, str]] = []
     refs = ref_images if isinstance(ref_images, list) else [ref_images]
     for i, ref in enumerate(refs):
@@ -213,10 +223,10 @@ def _save_ref_images(ref_images: str | list[str], output_dir: str) -> list[dict[
             continue
         try:
             header, b64_data = ref.split(",", 1)
-            fmt = header.split(";")[0].split("/")[1]  # png, jpeg, etc.
+            fmt = header.split(";")[0].split("/")[1]  # png, jpeg, webp 等
             img_data = base64.b64decode(b64_data)
             h = hashlib.md5(img_data).hexdigest()[:12]
-            ext = "png" if fmt == "png" else "jpg"
+            ext = fmt_to_ext.get(fmt, fmt)
             local_path = os.path.join(output_dir, f"{h}.{ext}")
             with open(local_path, "wb") as f:
                 f.write(img_data)
@@ -226,7 +236,7 @@ def _save_ref_images(ref_images: str | list[str], output_dir: str) -> list[dict[
                 "label": f"[Base64] {fmt}, ~{len(img_data) / 1024:.0f} KB",
             })
         except (ValueError, IndexError, base64.binascii.Error):
-            saved.append({"index": str(i + 1), "path": "", "label": _ref_label(ref)})
+            saved.append({"index": str(i + 1), "path": "", "label": ref_label(ref)})
     return saved
 
 
@@ -376,7 +386,7 @@ def single_generate(
                 "error": "生成失败：所有图片数据均为空",
             }
 
-    except Exception as e:
+    except httpx.HTTPStatusError as e:
         return {
             "status": "error",
             "image_path": None,
@@ -385,33 +395,21 @@ def single_generate(
             "output_dir": os.path.abspath(output_dir),
             "error": str(e),
         }
-
-
-def generate_from_session(session_data: dict, session_path: str | None = None, **kwargs) -> dict:
-    """
-    从 session JSON 数据执行图像生成。
-
-    从 session 中读取图片的 dataUrl（base64 嵌入），直接传给 API，
-    与 CLI 的 ``--session`` 模式行为一致。
-
-    :param session_data: session.json 的 dict 内容
-        - prompt (str): 提示词（含 <point>/<bbox> 坐标）
-        - images (list): 图片列表，每个元素包含 dataUrl 等字段
-    :param session_path: session.json 文件路径（可选），提供后自动将输出保存到 session 的 output/ 目录
-    :param kwargs: 传递给 single_generate 的其他参数
-    :return: single_generate 的返回结果
-    """
-    task: dict[str, str | list[str] | None] = {
-        "prompt": session_data["prompt"],
-    }
-    data_urls = [img["dataUrl"] for img in session_data.get("images", []) if img.get("dataUrl")]
-    if data_urls:
-        task["image"] = data_urls if len(data_urls) > 1 else data_urls[0]
-    task.update(kwargs)
-
-    # 如果提供了 session_path，自动设置输出目录为 session 的 output/ 子目录
-    if session_path:
-        session_dir = Path(session_path).parent
-        kwargs.setdefault("output_dir", str(session_dir / "output"))
-
-    return single_generate(task, **kwargs)
+    except httpx.RequestError as e:
+        return {
+            "status": "error",
+            "image_path": None,
+            "metadata_path": None,
+            "model": MODEL_ID,
+            "output_dir": os.path.abspath(output_dir),
+            "error": f"网络请求失败: {e}",
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "image_path": None,
+            "metadata_path": None,
+            "model": MODEL_ID,
+            "output_dir": os.path.abspath(output_dir),
+            "error": f"{type(e).__name__}: {e}",
+        }

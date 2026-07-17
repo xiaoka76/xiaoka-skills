@@ -50,7 +50,7 @@
 # 进入技能目录
 cd skills/seedream5pro-image
 
-# 设置 API Key（或创建 .env 文件自动加载）
+# 设置 API Key（仅支持环境变量，不读取 .env 文件）
 export ARK_API_KEY="your-api-key"
 
 # 安装为全局工具（推荐）
