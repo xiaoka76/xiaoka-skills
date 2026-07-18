@@ -1,6 +1,6 @@
 [project]
 name = "seedream"
-version = "2.1.1"
+version = "2.3.0"
 description = "Seedream 5.0 Pro 图像生成 CLI - 文生图/图生图/交互编辑"
 requires-python = ">=3.12"
 dependencies = [
