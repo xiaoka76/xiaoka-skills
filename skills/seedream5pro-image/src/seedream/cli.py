@@ -319,20 +319,11 @@ def summary(
         typer.echo(f"  - #{ann_id} {ann_type} {img_label}: {coords_str}")
 
     prompt = data.get("prompt", "")
-    if len(prompt) > 80:
-        typer.echo(f"Prompt: {prompt[:80]}...")
-    else:
-        typer.echo(f"Prompt: {prompt}")
+    typer.echo(f"Prompt: {prompt}")
 
-
-@session_app.command(name="get-prompt")
-def get_prompt(
-    session_path: Annotated[str, typer.Argument(help="session.json 文件路径")],
-) -> None:
-    """输出 prompt 字段内容（纯文本，无额外格式）。"""
-    data = load_session(session_path)
-    prompt = data.get("prompt", "")
-    typer.echo(prompt, nl=False)
+    user_intent = data.get("user_intent", "")
+    if user_intent:
+        typer.echo(f"User Intent: {user_intent}")
 
 
 @session_app.command(name="set-prompt")

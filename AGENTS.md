@@ -60,7 +60,23 @@ Agent **必须**在执行任何技能操作前先读取 `SKILL.md`。
 - 参考模板中的 JSON 结构构建提示词
 - 遵循 `prompt-writing.md` 中的模板方法论
 
-### 4. 编码规范
+### 4. Session 操作规范
+
+Agent 在 WebUI 交互编辑流程中，应遵循以下规范：
+
+- **查看会话状态**：使用 `seedream session summary` 命令查看会话摘要（含图片数量、标注、状态、完整 prompt 和 user_intent）
+- **禁止直接读取 session.json**：图片以 base64 格式嵌入其中，文件通常有几 MB 甚至更大，不应使用 Read 工具直接读取
+- **更新 prompt**：使用 `seedream session set-prompt` 命令更新
+- **执行生成**：使用 `seedream generate --session` 从 session 执行生成
+
+### 5. 提示词策略
+
+Agent 需根据任务类型选择不同的提示词策略：
+
+- **文生图（无参考图）**：prompt 必须覆盖主体、场景、风格、光影、构图、质量 6 个维度，确保足够丰富（80-150 字）
+- **图生图/编辑（有参考图）**：prompt 应简洁明确，用"图1"/"图2"指代参考图，让模型从参考图中提取视觉特征。禁止编造参考图中不存在的细节
+
+### 6. 编码规范
 
 项目遵循 `.trae/rules/code-style.md` 中定义的 Python 编码规范，核心要点：
 - 使用 `|` 运算符表示联合类型
@@ -82,6 +98,9 @@ uv run seedream generate -p "一只橘色虎斑猫，毛发蓬松，翡翠绿眼
 
 # 需要设置 API Key（仅支持环境变量，不读取 .env 文件）
 export ARK_API_KEY="your-api-key"
+
+# 启动交互编辑 WebUI（默认端口 8090）
+seedream webui --preload /path/to/image.png
 ```
 
 ## 输出目录

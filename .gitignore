@@ -249,3 +249,6 @@ lost+found/
 # Project-specific
 seedream-output/
 .seedream/
+
+# 临时目录
+.temp/

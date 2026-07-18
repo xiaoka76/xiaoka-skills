@@ -3,7 +3,7 @@ name: seedream5pro-image
 description: Seedream 5.0 Pro 专用图像生成技能。文生图 / 图生图 / 交互编辑（<point>/<bbox> 坐标精确定位），自动保存到本地。内置 17 类提示词模板。使用该技能时：用户想画图、生成图片、改图、编辑图片、做海报/UI/产品图/插画/角色/地图/信息图/分镜等任何视觉内容，或需要高质量的 AI 图像生成能力。
 license: MIT
 tags: ["image-generation", "seedream-5.0-pro", "seedream", "volcengine", "text-to-image", "image-to-image", "interactive-edit", "local-save"]
-version: 2.1.1
+version: 2.3.0
 ---
 
 # Seedream 5.0 Pro 图像生成
@@ -63,6 +63,8 @@ version: 2.1.1
 ## Agent 使用规范（强制执行）
 
 > **重要：seedream 5.0 Pro 是提示词驱动模型，提示词越丰富、越详细，生成效果越好。简短的提示词会导致画面空洞、细节缺失。Agent 必须严格遵守以下规则。**
+>
+> **适用范围说明：** 以下第1-5条适用于**文生图**场景（无参考图）。对于**图生图/编辑场景**（有参考图），请直接跳至第6条——参考图已提供视觉信息，prompt 应简洁明确。
 
 ### 1. 禁止自行编写简短提示词
 
@@ -103,7 +105,9 @@ version: 2.1.1
   → 简单任务可跳过此步骤直接执行 seedream generate
 ```
 
-### 3. Prompt 丰富度底线
+### 3. Prompt 丰富度底线（仅适用于文生图）
+
+> 图生图/编辑场景下此规则不适用——参考图已提供大部分视觉信息，prompt 应简洁明确（见第6条）。
 
 展开后的 prompt 必须覆盖以下维度（缺一不可）：
 
@@ -123,13 +127,29 @@ version: 2.1.1
 2. 仍然展开为丰富 prompt（覆盖上述 6 个维度）
 3. 不得退化为简短的一句话描述
 
-### 5. 简单任务也不能跳过
+### 5. 文生图简单任务也不能跳过
 
-即使用户需求看起来很简单（如"画一只猫"），Agent 也**必须**：
+即使用户的**文生图**需求看起来很简单（如"画一只猫"），Agent 也**必须**：
 - 查阅 `references/prompt-writing.md` 了解方法论
 - 匹配最接近的模板（如 `portraits-and-characters/` 或 `scenes-and-illustrations/`）
 - 展开为丰富 prompt，主动补充场景、光影、风格等细节
 - 可向用户简要确认补充的细节是否合适
+
+### 6. 图生图场景：禁止编造参考图细节，prompt 应简洁
+
+**Agent 不得凭空编造参考图中不存在的视觉特征。**
+
+- 禁止：根据文件名猜测图片内容并添加细节（如"粉色长发、红色眼瞳"）
+- 禁止：用户未提供具体描述时，自行补全角色外貌特征
+- 正确做法：直接用"图1"、"图2"指代，让模型从参考图中提取视觉特征
+
+**图生图场景下，prompt 应简洁明确，不需要过度堆砌细节。** 参考图已提供大部分视觉信息，prompt 只需说明操作意图即可：
+
+| 场景 | 正确做法 | 错误做法 |
+|------|---------|---------|
+| 角色替换 | `"将图1的角色替换为图2的角色，保留图1的穿搭"` | 编造"粉色长发、红色眼瞳"等未确认的细节 |
+| 风格迁移 | `"将图1转为图2的风格"` | 自行描述图2的视觉特征 |
+| 局部编辑 | `"把图1的A换成B"` | 过度描述A和B的外观细节 |
 
 ## 安装
 
@@ -272,7 +292,14 @@ y_norm = round(y_px / 图片高度 * 1000)
 
 1. Agent 启动 `seedream webui`，生成会话 ID，打开浏览器
 2. 用户在 WebUI 中上传图片、标注编辑区域、输入编辑意图、点击保存
-3. Agent 读取 session.json，匹配编辑模板，润色 prompt 后执行 `seedream generate --session`
+3. Agent 使用 `seedream session summary` 查看会话摘要（图片数量、标注、状态、完整 prompt 和 user_intent）
+4. 根据 `user_intent` 匹配编辑模板，确认是否需要调整 prompt
+5. 如需调整，使用 `seedream session set-prompt` 更新 prompt
+6. 执行 `seedream generate --session` 生成
+
+> **注意**：不要在 WebUI 保存后直接读取 session.json 文件。应使用 `session summary` 命令获取信息。
+>
+> **图生图/编辑场景下，prompt 应保持简洁**，用"图1"/"图2"指代参考图即可，让模型从参考图中提取视觉特征。不要编造参考图中不存在的细节，也不要过度堆砌描述。
 
 ### 启动 WebUI
 
@@ -296,11 +323,12 @@ Edit session 和 Generate session 的完整 JSON 格式见 [references/session-f
 ### Agent 操作 Session
 
 ```bash
-seedream session summary .seedream/edit/{uuid}/session.json  # 查看摘要
-seedream session get-prompt .seedream/edit/{uuid}/session.json  # 获取 prompt
+seedream session summary .seedream/edit/{uuid}/session.json  # 查看摘要（含完整 prompt 和 user_intent）
 seedream session set-prompt .seedream/edit/{uuid}/session.json --prompt "..."  # 更新 prompt
 seedream generate --session .seedream/edit/{uuid}/session.json  # 从 session 生成
 ```
+
+> **重要：不要直接使用 Read 工具读取 session.json 文件。** 图片以 base64 格式嵌入其中，文件通常有几 MB 甚至更大，可能导致读取失败。请始终使用 `session summary` 命令来获取信息。
 
 ### 编辑模板匹配
 
@@ -395,7 +423,9 @@ seedream generate -p "生成一张高仿真的直播带货截图风格视觉图.
 
 ## 提示词技巧
 
-> **提示词越丰富，生成效果越好。禁止使用简短的一句话描述。每条 prompt 必须覆盖 6 个维度。**
+> **文生图场景：** 提示词越丰富，生成效果越好。禁止使用简短的一句话描述。每条 prompt 必须覆盖 6 个维度。
+>
+> **图生图/编辑场景：** 参考图已提供视觉信息，prompt 应简洁明确，用"图1"/"图2"指代即可，不要编造细节。
 
 ### 基本结构
 

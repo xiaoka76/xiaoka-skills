@@ -66,8 +66,8 @@ seedream generate \
     --images "https://example.com/cat.jpg" \
     --size 1K
 
-# 交互编辑（启动 WebUI）
-seedream webui --preload /path/to/photo.jpg
+# 交互编辑（启动 WebUI，支持多图预加载）
+seedream webui --preload /path/to/photo1.jpg --preload /path/to/photo2.jpg
 ```
 
 详细用法请参阅 [SKILL.md](skills/seedream5pro-image/SKILL.md)。
