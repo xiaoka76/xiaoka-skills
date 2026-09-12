@@ -10,6 +10,35 @@
 
 ## 技能列表
 
+### 联网搜索 — `byted-web-search`
+
+[火山引擎豆包搜索](https://www.volcengine.com/docs/87772/2272949) API 技能，支持 **Custom / Global 双引擎**。
+
+**核心能力：**
+- Custom 版（默认）：文搜文 / 文搜图，时延低（~700ms），支持权威分级、时效范围、Query 改写
+- Global 版（`--engine global`）：全球站点覆盖、摘要长度可调、**图搜图（visual）**、ICP 备案过滤
+- 免费额度：每月 500 次（Custom / Global 共用）
+
+**快速开始：**
+
+```bash
+# 进入技能目录
+cd skills/byted-web-search
+
+# Custom 版文搜文（默认）
+python3 scripts/web_search.py "北京天气"
+
+# Global 版文搜文（全球站点）
+python3 scripts/web_search.py --engine global "OpenAI latest news"
+
+# Global 版图搜图（以图找图）
+python3 scripts/web_search.py --engine global "同款商品" --type visual --image-file /path/to/img.jpg
+```
+
+详细用法请参阅 [SKILL.md](skills/byted-web-search/SKILL.md)。
+
+---
+
 ### 图像生成 — `seedream5pro-image`
 
 [Seedream 5.0 Pro](https://www.volcengine.com/product/doubao-seedream) 专用图像生成技能。支持文生图、图生图、交互编辑，内置 17 类共 91 个提示词模板。
@@ -79,6 +108,7 @@ seedream webui --preload /path/to/photo1.jpg --preload /path/to/photo2.jpg
 ```
 xiaoka-skills/
 ├── skills/                  # 技能目录
+│   ├── byted-web-search/    # 火山引擎豆包搜索（Custom/Global 双引擎）
 │   └── seedream5pro-image/  # 图像生成技能
 │       ├── SKILL.md         # 技能清单
 │       ├── pyproject.toml   # 包配置

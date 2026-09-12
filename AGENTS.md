@@ -32,6 +32,7 @@ skills/<skill-name>/
 
 | 技能名称 | 描述 | 入口 |
 |----------|------|------|
+| `byted-web-search` | 火山引擎豆包搜索（Custom/Global 双引擎，含图搜图） | `python3 scripts/web_search.py` |
 | `seedream5pro-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/交互编辑） | `seedream generate` |
 
 ## Agent 交互规则
@@ -40,6 +41,7 @@ skills/<skill-name>/
 
 当用户请求涉及以下领域时，Agent 应优先查找 `skills/` 下对应的技能目录：
 
+- **联网搜索** → `skills/byted-web-search/`（默认 Custom 版；海外/图搜图用 `--engine global`）
 - **图像生成** → `skills/seedream5pro-image/`
 - 更多技能待添加
 
