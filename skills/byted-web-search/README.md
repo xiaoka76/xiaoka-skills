@@ -1,17 +1,17 @@
-# byted-web-search v1.4.0
+# byted-web-search v1.4.4
 
 火山引擎豆包搜索 API Skill，适用于 Claw / OpenClaw Agent。支持 **Custom / Global 双引擎**。
 
 ## 目录结构
 
 ```
-byted-web-search-v1.3.3/
-├── SKILL.md                  # Agent 运行时指令（主文件）
+byted-web-search-v1.4.4/
+├── SKILL.md                  # Agent 运行时指令（主文件，精简版）
 ├── references/
-│   ├── setup-guide.md        # 开通与配置详细步骤
+│   ├── setup-guide.md        # 开通、配置与计费（凭证/双引擎认证/免费额度）
 │   └── docs-index.md         # 官方文档 & 控制台链接索引
 ├── scripts/
-│   └── web_search.py         # 搜索脚本（未修改）
+│   └── web_search.py         # 搜索脚本（内置全部错误处理/首次回复/充值引导）
 ├── LICENSE                   # Apache 2.0
 └── README.md                 # 本文件
 ```
@@ -21,6 +21,32 @@ byted-web-search-v1.3.3/
 1. 将本目录放入 Claw 技能目录
 2. 获取 API Key：[联网搜索控制台](https://console.volcengine.com/search-infinity/api-key) 或 [Agent Plan  控制台](https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&advancedActiveKey=agentPlan)以及[Agent Plan 企业版控制台](https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&advancedActiveKey=agentEnterprise)
 3. 在聊天框直接发送 Key 给 Agent 即可
+
+## v1.4.4 变更（错误处理全部内置 CLI，文档精简）
+
+- **CLI**：`web_search.py` 内置全部错误处理——ERROR_HINTS 错误码→处理办法（14 条，额度类附完整充值引导）、缺凭证时输出完整首次回复模板（可直接复制给用户）、403/未授权错误从响应体解析错误码输出提示；移除所有"详见 references"的文档指引
+- **删除**：`references/troubleshooting.md`（错误码表 CLI 已内置）、`references/no-credential-reply.md`（首次回复模板并入 CLI）
+- **精简**：`docs-index.md` 删旧故障表；`setup-guide.md` 常见问题删除错误码条目（运行时错误由 CLI 输出）
+- **SKILL.md**：第 2/7 节改为「直接看 `web_search.py` 输出即可」，不引导 agent 读额外文档（避免污染上下文/耗 token）
+
+## v1.4.3 变更（进一步精简主文档）
+
+- **author**：`volcengine-search-team` → `银狼 (silver-wolf)`
+- **description**：去掉 API Key / 双引擎描述（属实现细节，description 只用于路由注入）
+- **删除**：`# Byted Web Search` 凭证获取段落（移入 setup-guide）、「路由」章节（description 已承担路由职责）、实测结论对比表（只留结论）
+- **移动**：双引擎认证/计费/免费额度、Global 按量后付费 Key 要求 → `references/setup-guide.md` 第 5 节
+- **重排**：SKILL.md 章节连续编号（0-7）
+
+## v1.4.2 变更（精简 SKILL.md，低频内容移 references/）
+
+- **精简**：SKILL.md 从 283 行 → 206 行（-27% token），只保留正常调用必用内容（路由/核心身份/搜索策略/参数）
+- **新增**：`references/no-credential-reply.md`（缺凭证首次回复模板，触发时读）、`references/troubleshooting.md`（错误码速查+充值引导）
+- **删除**：行为固化（长期搜索习惯）章节——记忆管理属 Agent 框架职责，非搜索技能职责，触发率极低，整体移除
+- **改动**：SKILL.md 第 3/9 节改为简短指引 + 指向对应 references 文件；第 10 节充值引导并入 troubleshooting.md
+
+## v1.4.1 变更（实测结论入文档）
+
+- **文档**：SKILL.md 新增「实测结论」——4 组文搜文 + 1 组图搜图双引擎实测对比（中文日常/英文新闻/中文科技/英文技术/图搜图），明确 Custom=中文生态、Global=全球生态，附给 Agent 的选择依据
 
 ## v1.4.0 变更（新增 Global 版双引擎）
 

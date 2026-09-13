@@ -11,6 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# Modifications by 银狼 (xiaoka76) for the byted-web-search skill:
+#   - Add Global engine (--engine global) with visual image search (2026-09)
+#   - Custom/Global dual-engine argument validation and friendly errors
+#   - Built-in error handling: ERROR_HINTS error-code mapping, first-reply
+#     templates for missing credentials, recharge guidance for quota errors
+#   - Parse CodeN/Code from HTTP error bodies and map to hints
+#   See https://github.com/xiaoka76/xiaoka-skills/tree/main/skills/byted-web-search
 
 #!/usr/bin/env python3
 """火山引擎豆包搜索 API 客户端（双引擎：Custom / Global）。
@@ -77,12 +85,12 @@ ERROR_HINTS = {
     "10400": "提示：参数错误。请检查 Query、Count、DocCount、TimeRange 等参数格式是否正确。",
     "10402": "提示：搜索类型非法。Custom 支持 web/image；Global 支持 web/image/visual。",
     "10403": "提示：账号或权限异常。请确认 API Key 来自联网搜索控制台，或检查账号权限。",
-    "10406": "提示：免费额度已耗尽。请检查账户额度或联系支持。",
+    "10406": "提示：免费额度已耗尽。请检查账户额度或联系支持。\n您的账户额度不足，请充值后正常使用：1)若您为个人账户，前往[联网搜索控制台](https://console.volcengine.com/finance/fund/recharge)进行充值；2)若您为企业用户，请联系企业账户管理员告知欠费情况。",
     "10407": "提示：当前无可用免费策略。请检查账户状态或联系支持。",
-    "10408": "提示：服务未付费开通。请到控制台确认是否已开通付费调用。",
+    "10408": "提示：服务未付费开通。请到控制台确认是否已开通付费调用。\n您的账户额度不足，请充值后正常使用：1)若您为个人账户，前往[联网搜索控制台](https://console.volcengine.com/finance/fund/recharge)进行充值；2)若您为企业用户，请联系企业账户管理员告知欠费情况。",
     "10409": "提示：套餐模式不支持。Global 版仅支持按量后付费，请确认 Key 来自「按量后付费」tab。",
     "10410": "提示：无可用搜索套餐。请检查账号是否已开通豆包搜索套餐。",
-    "10412": "提示：搜索套餐额度不足。请检查套餐额度或联系运营处理。",
+    "10412": "提示：搜索套餐额度不足。请检查套餐额度或联系运营处理。\n您的账户额度不足，请充值后正常使用：1)若您为个人账户，前往[联网搜索控制台](https://console.volcengine.com/finance/fund/recharge)进行充值；2)若您为企业用户，请联系企业账户管理员告知欠费情况。",
     "10500": "提示：服务内部错误。建议稍后重试，或联系支持。",
     "10501": "提示：免费额度链路依赖失败。可重试，持续失败请携带 RequestId 排查。",
     "700429": "提示：免费链路触发限流。请降频后重试。",
@@ -708,10 +716,13 @@ def main():
     if args.engine == "global":
         if not api_key:
             print(
-                "Error: Global 版需要 API Key（按量后付费）。请配置任一方式：\n"
-                "1) 【推荐】若在 Claw 中使用：拿 Key 后直接在聊天框发给我即可，无需编辑配置\n"
-                "2) API Key：设置 WEB_SEARCH_API_KEY 或传入 --api-key\n"
-                "Global 版不支持 AK/SK 签名。开通指南：references/setup-guide.md 或 SKILL.md",
+                "Error: Global 版需要 API Key（按量后付费）。\n\n"
+                "回答您的问题需要使用到火山引擎的官方联网搜索能力，个人用户每月自动获得 500 次免费额度。\n"
+                "1) 在[火山引擎官网](https://console.volcengine.com/search-infinity/web-search)完成开通\n"
+                "2) 在[API Key 管理](https://console.volcengine.com/search-infinity/api-key) → 「按量后付费」tab 创建 API Key\n"
+                "3) API Key 直接在本聊天框发给我即可\n"
+                "完成后说「好了」或再问一次即可。\n"
+                "Global 版不支持 AK/SK 签名。",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -720,11 +731,13 @@ def main():
             ak, sk, session_token = _get_credentials()
             if not ak or not sk:
                 print(
-                    "Error: 未找到凭证。请配置以下任一方式：\n"
-                    "1) 【推荐】若在 Claw 中使用：拿 Key 后直接在聊天框发给我即可，无需编辑配置\n"
-                    "2) API Key：设置 WEB_SEARCH_API_KEY 或传入 --api-key\n"
-                    "3) AK/SK：设置 VOLCENGINE_ACCESS_KEY 和 VOLCENGINE_SECRET_KEY\n"
-                    "开通指南：references/setup-guide.md 或 SKILL.md",
+                    "Error: 未找到凭证。\n\n"
+                    "回答您的问题需要使用到火山引擎的官方联网搜索能力，个人用户每月自动获得 500 次免费额度。\n"
+                    "1) 在[火山引擎官网](https://console.volcengine.com/search-infinity/web-search)完成开通\n"
+                    "2) 在[API Key 管理](https://console.volcengine.com/search-infinity/api-key)创建 API Key\n"
+                    "3) API Key 直接在本聊天框发给我即可\n"
+                    "（Agent Plan 用户请在[Agent Plan控制台](https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&advancedActiveKey=agentPlan)的【联网搜索】处查看 API Key）\n"
+                    "完成后说「好了」或再问一次即可。",
                     file=sys.stderr,
                 )
                 sys.exit(1)
@@ -771,18 +784,29 @@ def main():
             body = exc.response.text or ""
             if status == 429:
                 print(
-                    "提示：请求频率过高触发限流，建议降频后重试。"
-                    "详见 references/setup-guide.md",
+                    "提示：请求频率过高触发限流，建议降频后重试。",
                     file=sys.stderr,
                 )
             elif status == 401 and ("InvalidAccessKey" in body or "invalid" in body.lower()):
                 print(
                     "提示：AK/SK 无效或已失效。请检查 VOLCENGINE_ACCESS_KEY / VOLCENGINE_SECRET_KEY，"
-                    "或改用 API Key（Claw 中可直接在聊天框发给我）。详见 references/setup-guide.md",
+                    "或改用 API Key（Claw 中可直接在聊天框发给我）。",
                     file=sys.stderr,
                 )
             else:
-                print(body, file=sys.stderr)
+                # 403/其他：尝试从响应体提取错误码，命中 ERROR_HINTS 则输出处理办法
+                code = ""
+                try:
+                    err = (json.loads(body).get("ResponseMetadata") or {}).get("Error", {})
+                    # CodeN 是数字错误码（如 100013），Code 是字符串码（如 AccessDenied）
+                    code = str(err.get("CodeN") or err.get("Code") or "")
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
+                hint = ERROR_HINTS.get(str(code))
+                if hint:
+                    print(hint, file=sys.stderr)
+                else:
+                    print(body, file=sys.stderr)
         sys.exit(1)
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -808,7 +832,7 @@ def main():
             else:
                 print(
                     "提示：请确认 API Key 来自联网搜索控制台 https://console.volcengine.com/search-infinity/api-key ，"
-                    "而非火山方舟(Ark)。若在 Claw 中，可重新在聊天框发正确的 Key 给我。详见 references/setup-guide.md",
+                    "而非火山方舟(Ark)。若在 Claw 中，可重新在聊天框发正确的 Key 给我。",
                     file=sys.stderr,
                 )
         elif "429" in str(code) or "flowlimit" in str(code).lower() or "100018" in str(code):

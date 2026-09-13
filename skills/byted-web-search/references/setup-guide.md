@@ -35,7 +35,17 @@ https://www.volcengine.com → 注册（手机/飞书/抖音）→ 实名认证
 
 **本地使用**：skill 根目录创建 `.env`（内容 `WEB_SEARCH_API_KEY=your_key`），或 `export WEB_SEARCH_API_KEY="..."` 写入 ~/.bashrc。
 
-## 5. 验证
+## 5. 计费与认证（双引擎）
+
+| | Custom | Global |
+|---|---|---|
+| 认证 | API Key **或** AK/SK | **仅 API Key** |
+| 计费 | 按量 + 订阅套餐 | **仅按量后付费** |
+| 免费额度 | 500次/月 | 500次/月（两版**共用**） |
+
+**⚠️ Global 版 Key 要求**：必须使用[控制台「按量后付费」tab](https://console.volcengine.com/search-infinity/api-key?tab=post_paid)创建的 API Key；订阅套餐/Agent Plan 签发的 Key 调 Global 会报 `700901 invalid_api_key`。同一个 `WEB_SEARCH_API_KEY` 只要来自按量后付费 tab，两版通用。
+
+## 6. 验证
 
 ```bash
 python3 scripts/web_search.py "北京今日天气"
@@ -50,3 +60,5 @@ python3 scripts/web_search.py "北京今日天气"
 | 额度用完 | 正式开通后按量计费 |
 | 欠费 | 后付费 24h 内充值可恢复 |
 | 403 | 检查开通状态与账户 |
+
+> 运行时错误（错误码/限流/凭证无效等）由 `web_search.py` 直接输出处理办法，无需查阅本文档。

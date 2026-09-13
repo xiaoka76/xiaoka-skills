@@ -252,3 +252,4 @@ seedream-output/
 
 # 临时目录
 .temp/
+*_TODO.md
