@@ -101,6 +101,10 @@ uv run seedream generate -p "一只橘色虎斑猫，毛发蓬松，翡翠绿眼
 # 需要设置 API Key（仅支持环境变量，不读取 .env 文件）
 export ARK_API_KEY="your-api-key"
 
+# 可选：Base URL（默认按量后付费端点 https://ark.cn-beijing.volces.com/api/v3）
+# agent plan 用 https://ark.cn-beijing.volces.com/api/plan/v3，Key 与端点必须匹配，否则 401
+export ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
+
 # 启动交互编辑 WebUI（默认端口 8090）
 seedream webui --preload /path/to/image.png
 ```

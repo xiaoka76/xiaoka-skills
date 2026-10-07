@@ -12,6 +12,12 @@ from datetime import datetime
 
 MODEL_ID: str = "doubao-seedream-5-0-pro-260628"
 
+# API Key 与 Base URL 均仅通过环境变量注入，请求发往 {API_BASE}/images/generations。
+# 火山方舟按套餐区分端点前缀，Key 与端点必须匹配，否则返回 401：
+#   按量后付费   https://ark.cn-beijing.volces.com/api/v3        （默认）
+#   coding plan  https://ark.cn-beijing.volces.com/api/coding/v3 （无图像接口，下方自动归一到 /api/v3）
+#   agent plan   https://ark.cn-beijing.volces.com/api/plan/v3   （图像用量计入套餐额度）
+
 API_KEY: str | None = (
     os.getenv("ARK_API_KEY")
     or os.getenv("MODEL_IMAGE_API_KEY")

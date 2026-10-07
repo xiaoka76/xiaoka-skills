@@ -3,7 +3,7 @@ name: seedream5pro-image
 description: Seedream 5.0 Pro 专用图像生成技能。文生图 / 图生图 / 交互编辑（<point>/<bbox> 坐标精确定位），自动保存到本地。内置 17 类提示词模板。使用该技能时：用户想画图、生成图片、改图、编辑图片、做海报/UI/产品图/插画/角色/地图/信息图/分镜等任何视觉内容，或需要高质量的 AI 图像生成能力。
 license: MIT
 tags: ["image-generation", "seedream-5.0-pro", "seedream", "volcengine", "text-to-image", "image-to-image", "interactive-edit", "local-save"]
-version: 2.3.0
+version: 2.3.1
 ---
 
 # Seedream 5.0 Pro 图像生成
@@ -172,10 +172,17 @@ seedream generate --help
 ### 环境变量
 
 ```bash
-export ARK_API_KEY="your-api-key"
+export ARK_API_KEY="your-api-key"                               # 必填
+export ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"  # 可选，默认即此值
 ```
 
-API Key 仅通过环境变量配置（支持 `ARK_API_KEY` / `MODEL_IMAGE_API_KEY` / `MODEL_AGENT_API_KEY`，按优先级读取）。
+- **API Key**：按优先级读 `ARK_API_KEY` > `MODEL_IMAGE_API_KEY` > `MODEL_AGENT_API_KEY`。
+- **Base URL**：按优先级读 `ARK_BASE_URL` > `MODEL_IMAGE_API_BASE` > 默认 `https://ark.cn-beijing.volces.com/api/v3`；请求实际发往 `{Base URL}/images/generations`。
+- **端点按套餐区分，Key 与端点必须匹配**（火山方舟三套前缀）：
+  - 按量后付费：`https://ark.cn-beijing.volces.com/api/v3`（默认）
+  - coding plan：`https://ark.cn-beijing.volces.com/api/coding/v3` —— 无图像接口，传入会被自动归一到 `/api/v3`
+  - **agent plan：`https://ark.cn-beijing.volces.com/api/plan/v3`** —— 支持本技能模型，图像用量计入套餐「图像/视频生成」额度
+- ⚠️ agent plan 的 Key 打默认 `/api/v3` 会返回 401（反之亦然）；换套餐时 Base URL 与 Key 要一起换。
 
 ## 用法
 

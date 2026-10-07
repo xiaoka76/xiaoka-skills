@@ -82,6 +82,10 @@ cd skills/seedream5pro-image
 # 设置 API Key（仅支持环境变量，不读取 .env 文件）
 export ARK_API_KEY="your-api-key"
 
+# 可选：切换 Base URL（默认按量后付费端点）
+# agent plan 用户填 https://ark.cn-beijing.volces.com/api/plan/v3，Key 与端点必须匹配
+export ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
+
 # 安装为全局工具（推荐）
 uv tool install .
 seedream generate --prompt "一只橘猫坐在窗台上，午后阳光" --size 2K
