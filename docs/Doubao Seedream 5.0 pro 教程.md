@@ -1,4 +1,4 @@
-Doubao Seedream 5.0 pro（以下简称 Seedream 5.0 pro）面向高精度图片生成场景，提供更精准的位置与元素控制能力。支持文生图、单张图生图、多参考图生图（最多 10 张），以及通过交互编辑实现精准坐标定位和任意标记编辑。本文重点介绍 Seedream 5.0 pro 的专属能力，帮助您快速实现 [Image generation API](https://www.volcengine.com/docs/82379/1541523) 调用。
+Doubao Seedream 5.0 pro（以下简称 Seedream 5.0 pro）面向高精度图片生成场景，提供更精准的位置与元素控制能力。支持文生图、单张图生图、多参考图生图（最多 10 张），通过交互编辑实现精准坐标定位和任意标记编辑，以及将单张图片拆分为底图与多个图层。本文重点介绍 Seedream 5.0 pro 的专属能力，帮助您快速实现 [Image generation API](https://www.volcengine.com/docs/82379/1541523) 调用。
 
 <span id="pro_featured"></span>
 # 特色能力
@@ -6,10 +6,10 @@ Doubao Seedream 5.0 pro（以下简称 Seedream 5.0 pro）面向高精度图片�
 Seedream 5.0 pro 新增以下特色功能：
 
 
-<span aceTableMode="list" aceTableWidth="5,4"></span>
-|交互编辑 |原生多语种生成 |
-|---|---|
-|<video src="https://arkdoc.tos-cn-beijing.volces.com/videos/image-generation/edite-model.mov" controls></video><br><br><br>> 支持通过坐标、框选、箭头等多种方式指定编辑位置，精准编辑图片，实现局部元素替换、物品定位、区域生成等精细化操作。 |<span>![图片](https://ark-project.tos-cn-beijing.volces.com/doc_image/seedream_50_pro-part2-tab3-group1-input1.png) </span><br><br>> 新增支持俄语、阿拉伯语、菲律宾语、泰语、土耳其语、韩语、马来语、西班牙语、葡萄牙语、印尼语、法语、德语、越南语、日语等 14 种语言的原生文字生成能力。 |
+<span aceTableMode="list" aceTableWidth="4,4,4"></span>
+|交互编辑 |图层拆分 |原生多语种生成 |
+|---|---|---|
+|<video src="https://arkdoc.tos-cn-beijing.volces.com/videos/image-generation/edite-model.mov" controls></video><br><br><br>> 支持通过坐标、框选、箭头等多种方式指定编辑位置，精准编辑图片，实现局部元素替换、物品定位、区域生成等精细化操作。 |支持将单张图片的主体、背景、文字、装饰元素等内容自动拆解为 1 张底图和最多 16 个独立且带透明通道的图层，便于移动、缩放、替换、调色等二次编辑。 |<span>![图片](https://ark-project.tos-cn-beijing.volces.com/doc_image/seedream_50_pro-part2-tab3-group1-input1.png) </span><br><br>> 新增支持俄语、阿拉伯语、菲律宾语、泰语、土耳其语、韩语、马来语、西班牙语、葡萄牙语、印尼语、法语、德语、越南语、日语等 14 种语言的原生文字生成能力。 |
 
 
 <span id="pro_overview"></span>
@@ -29,10 +29,10 @@ Seedream 5.0 pro 新增以下特色功能：
 |[交互编辑](https://www.volcengine.com/docs/82379/2582774#interactive_edit) ||✓ |✗ |✗ |✗ |
 |[流式输出](https://www.volcengine.com/docs/82379/1824121#e5bef0d7) ||暂不支持 |✓ |✓ |✓ |
 |[联网搜索](https://www.volcengine.com/docs/82379/1824121#4e1745fa) ||暂不支持 |✓ |✗ |✗ |
-|模型参数 |分辨率 |1K, 2K |2K, 3K, 4K |2K, 4K |1K, 2K, 4K |
+|模型参数 |分辨率 |1K, 1.5K, 2K |2K, 3K, 4K |2K, 4K |1K, 2K, 4K |
 ||输出格式 |png, jpeg |png, jpeg |jpeg |jpeg |
 ||提示词优化模式 |标准模式, 极速模式 |标准模式 |标准模式 |标准模式, 极速模式 |
-||生成数量 |支持生成单图/多张图层 |输入的参考图数量 + 最终生成的图片数量 ≤ 15张 | | |
+||生成数量 |支持生成单图/多张图层（1 张底图 + 16 张图层） |输入的参考图数量 + 最终生成的图片数量 ≤ 15张 | | |
 |限流 IPM（张 / 分钟） ||500 |500 |500 |500 |
 
 
@@ -282,6 +282,115 @@ print(imagesResponse.data[0].url)
 准备好输入要素后，将 **待编辑图片** 和 **prompt** 一起传入 API 接口即可生成图片编辑结果。
 
 <span id="pro_prompt_optimize"></span>
+<span id="layer_decomposition"></span>
+# 图层拆分
+
+Seedream 5.0 pro 支持将单张输入图片中的主体、背景、文字、装饰元素等内容自动拆解为 1 张底图和最多 16 个可独立编辑的图层。每个图层均为带透明通道的 PNG 图片，模型还会返回图层的坐标、层级顺序和内容说明，便于在设计工具、前端画布中继续移动、缩放、替换、调色和重新组合。
+
+
+<span id=".5ouG5YiG5Y2V5byg5Zu-54mH"></span>
+## 拆分单张图片
+
+配置参数 `layer_decomposition` 为 `true` 即可开启图层拆分模式。开启后，`image` 为必选参数，且仅支持传入 1 张待拆分图片；`prompt` 为可选参数，用于描述要拆分哪些元素。
+
+
+### 提示词输入方式
+
+使用图层拆分功能，推荐采用以下三种输入方式：
+
+
+<span aceTableMode="list" aceTableWidth="1.5,4"></span>
+|使用目标 |`prompt` 写法 |
+|---|---|
+|自动拆出主要元素 |不传入 `prompt`。模型自动识别图片中的主体、文字、背景、装饰元素等主要内容，并逐一拆分为独立图层。 |
+|指定拆分对象 |在 `prompt` 中用自然语言描述待拆分的元素，例如“拆出人物、标题文字和右下角装饰图标”。可配合在输入图上标记（涂鸦、圈选等）辅助定位。 |
+|精准指定区域 |在 `prompt` 中通过 `<bbox>` 坐标标签指定待拆分元素的位置。坐标采用归一化坐标（范围 0~999）。 |
+
+
+```JSON
+{
+    "prompt": "将图片中的内容拆成 7 个图层，包括 6 组文字：<bbox>180 64 812 198</bbox>、<bbox>757 210 939 280</bbox>、<bbox>63 212 320 282</bbox>、<bbox>178 714 826 810</bbox>、<bbox>814 819 949 894</bbox>、<bbox>326 824 669 930</bbox>；1 只鹦鹉：<bbox>347 305 642 997</bbox>。",
+    "image": "https://ark-project.tos-cn-beijing.volces.com/doc_image/seedream_50_pro_layer_input.png",
+    "layer_decomposition": true,
+    "size": "2K",
+    "output_format": "jpeg",
+    "response_format": "url",
+    "watermark": true
+}
+```
+
+
+### 响应结果说明
+
+图层拆分模式下，响应参数 `data` 数组会同时返回底图和所有图层。您可通过 `url` 下载所有输出图，并根据图层叠放顺序（`z_index`）区分底图和图层。利用图层的边界框坐标信息（`bounding_box`）和图层叠放顺序（`z_index`）可还原、编辑或重组图层。
+
+
+<span aceTableMode="list" aceTableWidth="2,2,5"></span>
+|字段 |返回对象 |含义 |
+|---|---|---|
+|`url` |底图、图层 |底图或图层的下载链接。图片 URL 仅保留 24 小时。 |
+|`z_index` |底图、图层 |图层叠放顺序。底图 `z_index` 固定为 `0`，各图层按 `z_index` 递增排序。 |
+|`bounding_box.absolute` |图层 |图层在输出底图坐标系中的绝对像素位置，适用于将图层还原到输出底图的原始位置。 |
+|`bounding_box.normalized` |图层 |图层在输出底图坐标系中的归一化位置，适用于将图层还原到任意尺寸的自定义画布。 |
+|`name`、`description` |图层 |图层名称和内容描述。 |
+
+
+**返回结构示例：** 
+
+```JSON
+{
+    "model": "doubao-seedream-5-0-pro-260628",
+    "created": 1784696685,
+    "data": [
+        {
+            "url": "https://...",
+            "size": "2048x2048",
+            "output_format": "jpeg",
+            "z_index": 0
+        },
+        {
+            "url": "https://...",
+            "size": "1273x265",
+            "output_format": "png",
+            "z_index": 1,
+            "bounding_box": {
+                "absolute": [383, 120, 1655, 384],
+                "normalized": [187, 59, 808, 188]
+            },
+            "name": "Seedream标题文字",
+            "description": "黄色大号衬线字体的Seedream标题文字"
+        }
+    ],
+    "usage": {
+        "input_images": 1,
+        "generated_images": 8,
+        "output_tokens": 23107,
+        "total_tokens": 23107
+    }
+}
+```
+
+
+<span id=".5L2_55So5ouG5YiG5ZCO55qE5Zu-5bGC"></span>
+## 使用拆分后的图层
+
+获取底图和图层后，可以直接按原位置还原图层，也可以调整图层位置、大小和叠放顺序；如果需要修改某个元素的颜色、风格或细节，也可以单独编辑该图层。
+
+还原或重组图层时，可按以下顺序处理响应结果：
+
+
+* 将 `data` 数组中 `z_index` 为 `0` 的对象作为画布背景。
+
+* 提取 `z_index` 大于 `0` 的图层对象，并按 `z_index` 从小到大排序。
+
+* 下载图层 PNG，并根据 `bounding_box` 将图层放置到输出底图或目标画布。
+
+<div data-tips="true" data-tips-type="tip" data-tips-is-title="true">说明</div>
+
+
+<div data-tips="true" data-tips-type="tip">使用 <code>bounding_box.absolute</code> 可将输出图层还原到其在输出底图坐标系中的边界框区域；使用 <code>bounding_box.normalized</code> 可将输出图层还原到目标画布中的边界框区域。归一化坐标为整数，换算后可能存在取整误差。</div>
+
+
 # 提示词优化模式
 
 Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示词优化的模式：
@@ -289,13 +398,13 @@ Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示�
 
 * `standard`（默认值）：标准模式，生成内容的质量更高，耗时较长。
 
-* `fast`：快速模式，生成内容的耗时更短，效果略低于标准模式。
+* `fast`：快速模式，生成内容的耗时更短，效果略低于标准模式；**Seedream 5.0 flash / lite / 4.5 当前不支持**（5.0 pro 支持）。
 
 
 <div data-tips="true" data-tips-type="tip" data-tips-is-title="true">建议</div>
 
 
-<div data-tips="true" data-tips-type="tip">如您的业务对生成时延较为敏感，推荐使用 <code>fast</code> 模式以节省等待时间。</div>
+<div data-tips="true" data-tips-type="tip">如您的业务对生成时延较为敏感，推荐使用 Seedream 5.0 pro 的 <code>fast</code> 模式，或使用 Seedream 5.0 flash 以获得更快的图片生成速度。</div>
 
 
 ```JSON
@@ -319,6 +428,8 @@ Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示�
 
 * **output_format** ：指定生成图像的文件格式。
 
+* **background** ：指定是否生成带透明通道的图片。
+
 * **watermark** ：指定是否为输出图片添加水印。
 
 
@@ -334,7 +445,12 @@ Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示�
 
 * 默认值：`2K`
 
-* 可选值：`1K`、`2K`
+* 可选值：`1K`、`1.5K`、`2K`
+
+<div data-tips="true" data-tips-type="tip" data-tips-is-title="true">价格说明</div>
+
+
+<div data-tips="true" data-tips-type="tip">`1.5K` 与 `1K` 价格相同，且图片生成效果更优。</div>
 
 
 使用方式 1 并在 prompt 中描述特定宽高比时，模型实际映射的宽高像素参考值如下表所示（模型支持生成的宽高比不限于以下列举的标准值，此处仅以常见宽高比为例）。
@@ -350,6 +466,14 @@ Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示�
 ||3:2 |1248x832 |
 ||2:3 |832x1248 |
 ||21:9 |1568x672 |
+|1.5K |1:1 |1536x1536 |
+||4:3 |1792x1344 |
+||3:4 |1344x1792 |
+||16:9 |2048x1152 |
+||9:16 |1152x2048 |
+||3:2 |1872x1248 |
+||2:3 |1248x1872 |
+||21:9 |2352x1008 |
 |2K |1:1 |2048x2048 |
 ||4:3 |2368x1776 |
 ||3:4 |1776x2368 |
@@ -395,13 +519,37 @@ Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示�
 |```JSON```<br>```{```<br>```    "prompt": "生成一组共4张连贯插画，宽高比为3:2，核心为同一庭院一角的四季变迁，以统一风格展现四季独特色彩、元素与氛围",```<br>``````<br>```    "size": "2K"```<br>``````<br>```}```<br> |```JSON```<br>```{```<br>```    "prompt": "生成一组共4张连贯插画，核心为同一庭院一角的四季变迁，以统一风格展现四季独特色彩、元素与氛围",```<br>``````<br>```    "size": "2048x2048"```<br>``````<br>```}```<br> |
 
 
+**Seedream 5.0 pro（图层拆分场景）** 
+
+仅支持通过指定分辨率档位的方式设置。输出图的分辨率规则如下：
+
+
+* **底图**：输出底图的分辨率和 `size` 指定的分辨率一致；输出底图和原待拆分图的宽高比一致。
+
+* **各图层**：输出图层的分辨率和 `size` 指定的分辨率接近；每个输出图层和其在原图中的宽高比一致。
+
+
+`size` 的默认值与可选值：
+
+
+* 默认值：`auto`
+
+* 可选值：`1K`、`1.5K`、`2K`、`auto`（根据输入图的尺寸和宽高比进行输出）
+
+
+<div data-tips="true" data-tips-type="tip" data-tips-is-title="true">auto 适配规则</div>
+
+
+<div data-tips="true" data-tips-type="tip">auto 模式下，模型将根据输入图片中底图和每个图层的原始尺寸进行输出：<br><br>* 若输入图片中底图和每个图层的原始尺寸在 [<code>1280x720</code>（921600）, <code>2048x2048x1.1025</code>（4624220）] 之间，按照原尺寸输出底图与每个图层；且各自保持其在原图中的宽高比。<br>* 若输入图片中底图和每个图层的原始尺寸小于 1K，按 1K 输出底图与每个图层；且各自保持其在原图中的宽高比。<br>* 若输入图片中底图和每个图层的原始尺寸大于 2K，按 2K 输出底图与每个图层；且各自保持其在原图中的宽高比。</div>
+
+
 <span id=".5Zu-5YOP6L6T5Ye65pa55byP"></span>
 ### 图像输出方式
 
 通过设置 **response_format** 参数，可以指定生成图像的返回方式：
 
 
-* `url`：返回图片下载链接。
+* `url`（默认值）：返回图片下载链接，**链接在图片生成后 24 小时内有效，请及时下载图片**。
 
 * `b64_json`：以 Base64 编码字符串的 JSON 格式返回图像数据。
 
@@ -416,7 +564,7 @@ Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示�
 <span id=".5Zu-5YOP5paH5Lu25qC85byP"></span>
 ### 图像文件格式
 
-通过设置 **output_format** 参数，指定生成图像文件的格式：
+通过设置 **output_format** 参数，指定生成图像文件的格式（**默认值 `jpeg`**）：
 
 
 * `png`
@@ -431,10 +579,40 @@ Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示�
 ```
 
 
+<div data-tips="true" data-tips-type="warning" data-tips-is-title="true">注意</div>
+
+
+<div data-tips="true" data-tips-type="warning">图层拆分场景下，<code>output_format</code> 仅控制底图的输出格式，图层始终以 <code>png</code> 格式输出。</div>
+
+
+<span id=".5Zu-5YOP6YCP5pi-6YCa6YGT6K6-572u"></span>
+### 透明通道设置
+
+设置 **background** 参数，控制是否生成带透明通道的图片：
+
+
+* `transparent`：透明背景模式，输出带有透明背景的图。
+
+* `opaque`（默认）：不透明背景模式，生成常规的实体背景图。
+
+
+```JSON
+{
+    "background": "transparent"
+}
+```
+
+
+<div data-tips="true" data-tips-type="warning" data-tips-is-title="true">使用限制</div>
+
+
+<div data-tips="true" data-tips-type="warning">* 仅支持图生图场景，且只支持输入 <strong>1 张带透明通道</strong>的图片；<br>* 透明背景模式下，输出图片默认为 <code>png</code> 格式，若同时配置 <code>output_format</code> 为 <code>jpeg</code>，将触发报错；<br>* 若传入了不支持透明通道的文件格式（如 <code>jpeg</code>），将触发报错。</div>
+
+
 <span id=".5Zu-5YOP5Lit5re75Yqg5rC05Y2w"></span>
 ### 图像中添加水印
 
-通过设置 **watermark** 参数，来控制是否在生成的图片中添加水印。
+通过设置 **watermark** 参数，来控制是否在生成的图片中添加水印（**默认值 `true`**，即不传该参数会在右下角添加"AI 生成"水印）。
 
 
 * `false`：不添加水印。
@@ -471,15 +649,24 @@ Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示�
 
       如需获得图片的 Base64 编码，可使用第三方工具，例如 https://base64.guru/converter/encode/image。
 
-* 宽高比（宽/高）范围：[1/16, 16]
+不同场景对输入图的约束不同，详见下表：
 
-* 宽高长度（px） \> 14
 
-* 大小：不超过 30 MB
+<span aceTableMode="list" aceTableWidth="1.5,3,3"></span>
+|约束项 |图片生成场景 |图层拆分场景 |
+|---|---|---|
+|图片格式 |jpeg、png、webp、bmp、tiff、gif、heic、heif |png、jpeg |
+|总像素（宽×高） |[196, `6000×6000`（3600万）] |[`512×512`（262144）, `6000×6000`（3600万）] |
+|宽高长度（px） |大于 14 |— |
+|宽高比（宽/高） |[1/16, 16] |[1/16, 16] |
+|大小 |不超过 30 MB |不超过 30 MB |
+|传入张数 |最多传入 10 张参考图 |仅支持传入单张图 |
 
-* 总像素：不超过 `6000x6000=36000000` px （对单张图宽度和高度的像素乘积限制，而不是对宽度或高度的单独值进行限制）
 
-* 最多支持传入 10 张参考图
+<div data-tips="true" data-tips-type="tip" data-tips-is-title="true">说明</div>
+
+
+<div data-tips="true" data-tips-type="tip">总像素是对单张图宽度和高度的<strong>像素乘积</strong>限制，而不是对宽度或高度的单独值进行限制。</div>
 
 
 **保存时间**
@@ -489,7 +676,9 @@ Seedream 5.0 pro 支持通过 `optimize_prompt_options.mode` 参数控制提示�
 **限流说明**
 
 
-* RPM 限流：账号下同模型（区分模型版本）每分钟生成图片数量上限。若超过该限制，生成图片时会报错。
+* IPM 限流：账号下同模型（区分模型版本）每分钟生成图片数量上限。若超过该限制，生成图片时会报错。
+
+   * 图层拆分场景下，每次请求预扣减 17 IPM（即按最大输出张数 17 张预留配额）；图片全部生成后，按实际生成数量返还多扣减的额度。
 
 * 不同模型的限制值不同，详见 [图片生成能力](https://www.volcengine.com/docs/82379/1330310#d3e5e0eb)。
 

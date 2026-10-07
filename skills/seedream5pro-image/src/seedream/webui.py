@@ -7,7 +7,7 @@ Session 采用状态机设计，图片以 base64 格式直接嵌入 session.json
 
 用法:
   seedream webui
-  seedream webui --port 8090 --preload path/to/img1.png
+  seedream webui --port 8000 --preload path/to/img1.png
 """
 
 from __future__ import annotations
@@ -39,7 +39,6 @@ from seedream.session import (
 # ── 路径配置 ──────────────────────────────────────────────────────────────────
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-DEFAULT_PORT = 8090
 # 单个上传文件大小上限（字节），与 API 30MB 限制对齐并留出余量
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 # 单次 /api/save 请求体大小上限（字节），防止超大 base64 payload 导致 OOM

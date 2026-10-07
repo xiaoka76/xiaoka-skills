@@ -854,11 +854,16 @@ clearPromptBtn.addEventListener("click", () => {
   setStatus("已清空指令和标注。");
 });
 
-function annotationTokenForLabel(ann, label) {
+function annotationTokenForLabel(ann, label, image) {
+  // 坐标口径：prompt 内一律写**原图像素**；归一化由 seedream CLI 在发送前校验并换算。
+  // 若拿不到原图尺寸，round(NaN) 会让 CLI 明确报"含非整数坐标"，宁可响亮失败也不要静默算错。
+  const W = image ? image.naturalWidth : NaN;
+  const H = image ? image.naturalHeight : NaN;
+  const px = (v, size) => Math.round((v / 1000) * size);
   if (ann.type === "point") {
-    return `${label}<point>${ann.x} ${ann.y}</point>`;
+    return `${label}<point>${px(ann.x, W)} ${px(ann.y, H)}</point>`;
   }
-  return `${label}<bbox>${ann.x1} ${ann.y1} ${ann.x2} ${ann.y2}</bbox>`;
+  return `${label}<bbox>${px(ann.x1, W)} ${px(ann.y1, H)} ${px(ann.x2, W)} ${px(ann.y2, H)}</bbox>`;
 }
 
 function buildModelInputFromPrompt() {
@@ -894,7 +899,7 @@ function buildModelInputFromPrompt() {
       const image = ann ? state.images.find((item) => item.id === ann.imageId) : null;
       const inputLabel = assignImage(image);
       if (!ann || !inputLabel) return "";
-      return ` ${annotationTokenForLabel(ann, inputLabel)} `;
+      return ` ${annotationTokenForLabel(ann, inputLabel, image)} `;
     }
     if (node.tagName === "BR") {
       return "\n";

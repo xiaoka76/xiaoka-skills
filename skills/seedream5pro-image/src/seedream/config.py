@@ -42,6 +42,33 @@ SUPPORTED_IMAGE_FORMATS: set[str] = {
 
 MAX_REF_IMAGES: int = 10
 
+# ── 参考图限制（对齐官方《图片生成 API》）───────────────────────────────────────
+# 单张参考图：总像素 [196, 6000×6000]，宽高 > 14px，宽高比 [1/16, 16]，≤ 30MB
+MAX_REF_PIXELS: int = 36_000_000
+MIN_REF_PIXELS: int = 196
+MIN_REF_EDGE: int = 14
+MAX_REF_ASPECT: float = 16.0
+MAX_REF_BYTES: int = 30 * 1024 * 1024
+
+# 视觉理解（LLM 读图）的硬性像素范围：与图生图**完全一致** [196, 3600 万]。
+# 不同点在于宽高比（LLM [1/150,150] 更宽松）与文件大小（base64/url 单张 < 10MB）。
+LLM_PIXEL_RANGE: tuple[int, int] = (196, 36_000_000)
+
+# 平台内联预览上限：产物达到这个体积就自动降档重渲染
+PREVIEW_MAX_BYTES: int = 2 * 1024 * 1024
+
+# ── 分辨率档位 ────────────────────────────────────────────────────────────────
+# 图片生成场景：1K / 1.5K / 2K（1.5K 与 1K 同价，画质更优）
+# 图层拆分场景：1K / 1.5K / 2K / auto（auto 按输入图尺寸自适应，不可与宽x高混用）
+SIZE_TIERS: set[str] = {"1K", "1.5K", "2K"}
+
+# ── 图层拆分 ──────────────────────────────────────────────────────────────────
+# 单张输入图可拆解为 1 张底图（z_index=0）+ 最多 MAX_LAYERS 个图层（png，带透明通道）
+MAX_LAYERS: int = 16
+
+# 透明背景模式仅支持带透明通道的输入图，这些格式天然不含 alpha 通道
+ALPHA_LESS_FORMATS: set[str] = {".jpg", ".jpeg"}
+
 IMAGE_FORMAT_MAP: dict[str, str] = {
     ".jpg": "jpeg", ".jpeg": "jpeg",
     ".png": "png",

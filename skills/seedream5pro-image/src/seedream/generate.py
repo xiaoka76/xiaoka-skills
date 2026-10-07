@@ -8,6 +8,7 @@ Seedream 5.0 Pro - 图像生成核心函数模块
 import base64
 import hashlib
 import os
+import re
 import time
 import uuid
 
@@ -18,7 +19,13 @@ from .config import (
     API_KEY,
     DEFAULT_OUTPUT_DIR,
     IMAGE_FORMAT_MAP,
+    MAX_LAYERS,
+    MAX_REF_ASPECT,
+    MAX_REF_BYTES,
     MAX_REF_IMAGES,
+    MAX_REF_PIXELS,
+    MIN_REF_EDGE,
+    MIN_REF_PIXELS,
     MODEL_ID,
     ref_label,
     timestamp,
@@ -43,6 +50,12 @@ def _get_client(timeout: float = 300.0) -> httpx.Client:
 
 _MAX_RETRIES: int = 3
 _RETRY_BACKOFF: float = 1.5  # 指数退避基数（秒）
+
+# ── 输出格式映射 ──────────────────────────────────────────────────────────────
+
+_FORMAT_TO_EXT: dict[str, str] = {
+    "png": "png", "jpeg": "jpg", "jpg": "jpg", "webp": "webp",
+}
 
 
 # ── 工具函数 ──────────────────────────────────────────────────────────────────
@@ -106,14 +119,17 @@ def _build_request_body(item: dict) -> dict:
     :param item: 任务参数，包含 prompt、size、image 等字段
     :return: 发送给 API 的请求体字典
     """
-    body: dict = {
-        "model": MODEL_ID,
-        "prompt": item.get("prompt", ""),
-    }
+    body: dict = {"model": MODEL_ID}
+
+    # 图层拆分场景下 prompt 为可选参数：不传时模型自动识别主要元素
+    prompt = item.get("prompt")
+    if prompt:
+        body["prompt"] = prompt
 
     supported_fields: list[str] = [
         "size", "response_format", "watermark", "image",
         "output_format", "optimize_prompt_options",
+        "layer_decomposition", "background",
     ]
     for field in supported_fields:
         if field in item and item[field] is not None:
@@ -207,6 +223,69 @@ def _save_b64(b64_data: str, output_dir: str, filename: str, ext: str) -> str:
     return os.path.abspath(path)
 
 
+def suggest_reference_size(width: int, height: int) -> tuple[int, int]:
+    """给出把图片压进官方限制内的建议尺寸（等比缩小）。"""
+    ratio = (MAX_REF_PIXELS / (width * height)) ** 0.5
+    if ratio >= 1:
+        return width, height
+    return max(MIN_REF_EDGE + 1, int(width * ratio)), max(MIN_REF_EDGE + 1, int(height * ratio))
+
+
+def _check_reference_limits(path: str) -> None:
+    """校验本地参考图是否超出官方图生图限制。
+
+    超过限制时接口必定报错，所以这里**直接给出可执行的缩放建议**而不是把错误留到调用时。
+    读不出尺寸（缺 Pillow / 格式不支持）时跳过像素校验，交给接口判断。
+
+    :raises ValueError: 超出限制
+    """
+    size_mb = os.path.getsize(path) / (1024 * 1024)
+    if size_mb > MAX_REF_BYTES / (1024 * 1024):
+        raise ValueError(
+            f"参考图超过 {MAX_REF_BYTES // (1024 * 1024)} MB 限制: {path}（{size_mb:.1f} MB）。"
+            f"可先压缩再传入"
+        )
+
+    dims = probe_image_size(path)
+    if dims is None:
+        return
+    width, height = dims
+
+    if min(width, height) <= MIN_REF_EDGE:
+        raise ValueError(
+            f"参考图宽高必须大于 {MIN_REF_EDGE}px: {path}（{width}x{height}）"
+        )
+    pixels = width * height
+    if pixels < MIN_REF_PIXELS:
+        raise ValueError(f"参考图总像素过小: {path}（{pixels}，下限 {MIN_REF_PIXELS}）")
+
+    aspect = width / height
+    if aspect > MAX_REF_ASPECT or aspect < 1 / MAX_REF_ASPECT:
+        raise ValueError(
+            f"参考图宽高比超出 [1/{MAX_REF_ASPECT:.0f}, {MAX_REF_ASPECT:.0f}]: "
+            f"{path}（{width}x{height}，比例 {aspect:.2f}）"
+        )
+
+    if pixels > MAX_REF_PIXELS:
+        new_w, new_h = suggest_reference_size(width, height)
+        raise ValueError(
+            f"参考图总像素超限: {path}（{width}x{height} = {pixels / 10000:.0f} 万像素，"
+            f"上限 {MAX_REF_PIXELS // 10000} 万像素）。"
+            f"建议先等比缩放到 {new_w}x{new_h} 再传入——这一步交给你决定，不会自动改图"
+        )
+
+
+def probe_image_size(path: str) -> tuple[int, int] | None:
+    """读取本地图片宽高；读不出来返回 None（不抛异常）。"""
+    try:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            return im.size
+    except Exception:
+        return None
+
+
 def _resolve_image_path(path: str) -> str:
     """
     将图片路径解析为 API 可接受的格式。
@@ -232,9 +311,7 @@ def _resolve_image_path(path: str) -> str:
     if img_format is None:
         raise ValueError(f"不支持的图片格式: {ext}，支持的格式: {', '.join(sorted(IMAGE_FORMAT_MAP))}")
 
-    size_mb = os.path.getsize(path) / (1024 * 1024)
-    if size_mb > 30:
-        raise ValueError(f"图片超过 30 MB 限制: {path} ({size_mb:.1f} MB)")
+    _check_reference_limits(path)
 
     with open(path, "rb") as f:
         b64_data = base64.b64encode(f.read()).decode("ascii")
@@ -281,11 +358,56 @@ def _save_ref_images(ref_images: str | list[str], output_dir: str) -> list[dict[
     return saved
 
 
-def _save_metadata(item: dict, image_paths: list[str], output_dir: str, filename: str) -> str:
+def _slugify(text: str, max_len: int = 24) -> str:
+    """将图层名称转为安全的文件名片段（保留中英文与数字，其余转 -）。"""
+    slug = re.sub(r"[^\w\u4e00-\u9fff]+", "-", text).strip("-")
+    return slug[:max_len] or "layer"
+
+
+def bbox_base_to_input(
+    bbox: list[int],
+    base_size: str | tuple[int, int],
+    input_size: tuple[int, int] | list[int],
+) -> list[int]:
+    """把图层 bbox 从**输出底图坐标系**换算到**原输入图**的像素坐标系。
+
+    图层拆分的 ``bounding_box.absolute`` 用的是输出底图坐标（分辨率＝size 档位，
+    例如 2K），而 agent 后续编辑的是**原输入图**，两者分辨率可能不同（宽高比一致），
+    因此按比例换算。这样图层 bbox 就能与全局口径（原图像素）对齐、直接粘进 prompt。
+
+    :param bbox: 底图坐标系下的 ``[left, top, right, bottom]``
+    :param base_size: 底图尺寸（``"1664x2496"`` 或 ``(1664, 2496)``）
+    :param input_size: 原输入图尺寸 ``(宽, 高)``
+    :return: 原输入图像素坐标系下的 bbox
+    """
+    if isinstance(base_size, str):
+        base_w, base_h = (int(v) for v in base_size.lower().split("x"))
+    else:
+        base_w, base_h = base_size
+    in_w, in_h = input_size
+    if base_w <= 0 or base_h <= 0:
+        return list(bbox)
+    scaled = [
+        round(bbox[0] * in_w / base_w), round(bbox[1] * in_h / base_h),
+        round(bbox[2] * in_w / base_w), round(bbox[3] * in_h / base_h),
+    ]
+    return [
+        max(0, min(in_w - 1, scaled[0])), max(0, min(in_h - 1, scaled[1])),
+        max(0, min(in_w - 1, scaled[2])), max(0, min(in_h - 1, scaled[3])),
+    ]
+
+
+def _save_metadata(
+    item: dict,
+    records: list[dict],
+    output_dir: str,
+    filename: str,
+) -> str:
     """将生成参数和结果保存为同名 .md 元数据文件。
 
     :param item: 生成任务参数
-    :param image_paths: 生成的图片路径列表
+    :param records: 输出记录列表，每项含 path / z_index / name / description /
+        bounding_box / output_format / size
     :param output_dir: 输出目录
     :param filename: 文件名前缀（不含扩展名）
     :return: 元数据文件绝对路径
@@ -301,6 +423,12 @@ def _save_metadata(item: dict, image_paths: list[str], output_dir: str, filename
         f"- **水印**: {'开启' if item.get('watermark') else '关闭'}",
         f"- **优化模式**: {item.get('optimize_prompt_options', {}).get('mode', 'standard')}",
     ]
+    if item.get("prompt_raw") and item.get("prompt_raw") != item.get("prompt"):
+        lines.append(f"- **原始提示词（像素标签，已由 CLI 换算）**: {item['prompt_raw']}")
+    if item.get("layer_decomposition"):
+        lines.append(f"- **图层拆分**: 开启（1 底图 + 最多 {MAX_LAYERS} 图层）")
+    if item.get("background") == "transparent":
+        lines.append("- **背景**: transparent（透明通道）")
     ref_images = item.get("image")
     if ref_images:
         lines.append("")
@@ -315,8 +443,30 @@ def _save_metadata(item: dict, image_paths: list[str], output_dir: str, filename
         "",
         "## 输出文件",
     ])
-    for i, p in enumerate(image_paths):
-        lines.append(f"- 图片 [{i + 1}]: `{p}`")
+    for rec in records:
+        meta = "，".join(p for p in (rec.get("size"), rec.get("output_format")) if p)
+        meta_str = f"（{meta}）" if meta else ""
+        z_index = rec.get("z_index")
+        if z_index is None:
+            lines.append(f"- 图片: `{rec['path']}`{meta_str}")
+        elif z_index == 0:
+            lines.append(f"- 底图 [z_index=0]: `{rec['path']}`{meta_str}")
+        else:
+            name = rec.get("name") or ""
+            head = f"- 图层 {z_index} [z_index={z_index}]"
+            if name:
+                head += f" `{name}`"
+            lines.append(f"{head}: `{rec['path']}`{meta_str}")
+            description = rec.get("description") or ""
+            if description:
+                lines.append(f"  - 描述: {description}")
+            if rec.get("bbox_pixel"):
+                lines.append(f"  - bbox 原图像素: {rec['bbox_pixel']}")
+                lines.append(f"  - **可直接写进 prompt 的标签（像素）**: `{rec['prompt_fragment']}`")
+            if rec.get("bbox_base"):
+                lines.append(f"  - bbox 底图坐标系原值（{rec['bbox_base_size']}）: {rec['bbox_base']}")
+            if rec.get("bbox_note"):
+                lines.append(f"  - 注意: {rec['bbox_note']}")
     lines.append(f"- 元数据: `{os.path.join(os.path.abspath(output_dir), filename)}.md`")
     lines.append("")
 
@@ -335,21 +485,25 @@ def single_generate(
     output_dir: str = DEFAULT_OUTPUT_DIR,
 ) -> dict:
     """
-    执行一次图像生成（文生图 / 图生图 / 交互编辑）。
+    执行一次图像生成（文生图 / 图生图 / 交互编辑 / 图层拆分）。
 
     :param item: 任务参数
-        - prompt (str, 必填): 提示词
+        - prompt (str, 可选): 提示词；图层拆分场景下可省略
         - size (str, 可选): 尺寸，默认 "2K"
         - image (str | list, 可选): 参考图 URL 或 URL 列表
         - output_format (str, 可选): "png" 或 "jpeg"
         - watermark (bool, 可选): 是否加水印
         - optimize_prompt_options (dict, 可选): 提示词优化配置
+        - layer_decomposition (bool, 可选): 图层拆分开关（仅支持单张输入图）
+        - background (str, 可选): "transparent" 或 "opaque"
     :param timeout: API 超时秒数
     :param output_dir: 图片保存目录
     :return: 结果字典
         - status: "success" | "error"
-        - image_path: 本地路径 | None
+        - image_path: 本地路径（图层拆分场景为底图） | None
         - metadata_path: 本地路径 | None
+        - all_images: 全部输出图的本地路径列表
+        - layers: 图层拆分场景下的输出记录（含 z_index / name / bounding_box）
         - model: 模型 ID
         - output_dir: 目录路径
         - error: 错误信息 | None
@@ -357,8 +511,8 @@ def single_generate(
     # 强制 b64_json 模式确保本地保存
     item["response_format"] = "b64_json"
 
+    is_layer_mode = bool(item.get("layer_decomposition"))
     output_format = item.get("output_format", "png")
-    ext = "png" if output_format == "png" else "jpg"
     uid = uuid.uuid4().hex[:12]
 
     try:
@@ -385,12 +539,23 @@ def single_generate(
                 "error": "API 返回空数据",
             }
 
-        results: list[str] = []
+        records: list[dict] = []
         for i, img_data in enumerate(data_list):
             if "error" in img_data:
                 continue
 
-            filename = f"{uid}-{i}" if len(data_list) > 1 else uid
+            # 图层拆分场景下 API 逐图返回 output_format（图层恒为 png），以响应为准
+            img_format = img_data.get("output_format") or output_format
+            ext = _FORMAT_TO_EXT.get(img_format, "png")
+
+            z_index = img_data.get("z_index")
+            if z_index is not None:
+                filename = f"{uid}-L{z_index:02d}"
+                if z_index > 0 and img_data.get("name"):
+                    filename += f"-{_slugify(str(img_data['name']))}"
+            else:
+                filename = f"{uid}-{i}" if len(data_list) > 1 else uid
+
             local_path: str | None = None
 
             # 优先 b64_json
@@ -403,15 +568,51 @@ def single_generate(
                     local_path = _download_image(url, output_dir, filename, ext)
 
             if local_path:
-                results.append(local_path)
+                records.append({
+                    "path": local_path,
+                    "size": img_data.get("size", ""),
+                    "output_format": img_format,
+                    "z_index": z_index,
+                    "name": img_data.get("name"),
+                    "description": img_data.get("description"),
+                    "bounding_box": img_data.get("bounding_box"),
+                })
 
-        if results:
-            metadata_path = _save_metadata(item, results, output_dir, uid)
+        if records:
+            # 图层拆分：底图（z_index=0）在前，其余按 z_index 升序；普通场景保持返回顺序
+            records.sort(key=lambda r: (r["z_index"] is None, r["z_index"] or 0))
+            # 坐标口径统一：图层 bbox 是像素（底图坐标系），这里一次性换成 prompt 标签，
+            # 标签就是原图像素，agent 直接拿去用；坐标格式的转换在发送前统一完成
+            if is_layer_mode:
+                base = next((r for r in records if r.get("z_index") == 0), None)
+                base_size = (base or {}).get("size")
+                input_size = item.get("input_size")
+                if base_size:
+                    for rec in records:
+                        box = (rec.get("bounding_box") or {}).get("absolute")
+                        if rec.get("z_index") and isinstance(box, list) and len(box) == 4:
+                            rec["bbox_base"] = box
+                            rec["bbox_base_size"] = base_size
+                            if input_size:
+                                # 对外一律原图像素：换算回输入图坐标系，标签可直接粘进 prompt
+                                px = bbox_base_to_input(box, base_size, input_size)
+                                rec["bbox_pixel"] = px
+                                rec["prompt_fragment"] = (
+                                    f"<bbox>{' '.join(str(v) for v in px)}</bbox>"
+                                )
+                            else:
+                                rec["bbox_note"] = (
+                                    "参考图尺寸未知（网络 URL？），无法把底图坐标换算成原图像素标签；"
+                                    "改用本地图片路径即可获得可直接粘贴的 <bbox>"
+                                )
+            results = [r["path"] for r in records]
+            metadata_path = _save_metadata(item, records, output_dir, uid)
             return {
                 "status": "success",
-                "image_path": results[0],  # 单图场景返回第一张
+                "image_path": results[0],  # 单图场景返回第一张；图层场景返回底图
                 "metadata_path": metadata_path,
                 "all_images": results,
+                "layers": records if is_layer_mode else [],
                 "uid": uid,
                 "model": MODEL_ID,
                 "output_dir": os.path.abspath(output_dir),

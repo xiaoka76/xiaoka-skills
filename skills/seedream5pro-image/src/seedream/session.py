@@ -289,6 +289,8 @@ def init_generate_session(task_data: dict) -> tuple[dict, Path]:
             "output_format": task_data.get("output_format", "jpeg"),
             "watermark": task_data.get("watermark", False),
             "optimize": task_data.get("optimize_prompt_options", {}).get("mode", "standard"),
+            "layer_decomposition": bool(task_data.get("layer_decomposition", False)),
+            "background": task_data.get("background", "opaque"),
         },
         "ref_images": [],
         "outputs": [],
