@@ -42,6 +42,7 @@
 
 | 文件 | 说明 |
 |------|------|
+| `cli-reference.md` | CLI 参数与接口细节：安装、端点套餐、各子命令完整参数表、分辨率像素表、参考图约束、图层拆分产出与还原、`mark` 绘制规则、`--optimize`、编辑模板匹配 |
 | `prompt-guide.md` | 官方《Seedream 4.0-5.0 提示词指南》要点：5 条通用规则、文生图/图生图/多图输入各场景官方范例、与 5.0 pro 的差异 |
 | `prompt-writing.md` | JSON 提示词模板总规范：模板怎么组织、字段怎么设计、参数如何区分必问/默认/随机 |
 | `run-format.md` | 生成记录（run）的文件格式：`run.json` / `inputs/` / `outputs/` / `index.jsonl` 字段说明 |
