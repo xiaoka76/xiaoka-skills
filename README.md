@@ -131,7 +131,7 @@ seedream mark ./photo.png --box 980,640,1180,860 --plain -o ./marked.png
 xiaoka-skills/
 ├── skills/                  # 技能目录
 │   ├── byted-web-search/    # 火山引擎豆包搜索（Custom/Global 双引擎）
-│   └── seedream-image/  # 图像生成技能
+│   └── seedream-image/      # 图像生成技能
 │       ├── SKILL.md         # 技能清单
 │       ├── pyproject.toml   # 包配置
 │       ├── src/seedream/    # 可安装的 Python 包
