@@ -182,5 +182,5 @@ seedream replay [<id>|last] [--run]     # 默认只预演、不消耗额度；�
 单张参考图：格式 `jpeg`/`png`/`webp`/`bmp`/`tiff`/`gif`/`heic`/`heif`；宽高均 **> 14px**；
 宽高比 `[1/16, 16]`；≤ **30MB**；总像素 `[196, 3600万]`。图片生成场景最多 **10 张**。
 
-超限时**本地拦下并给出可执行的缩放建议（不会自动改图）**；与「LLM 读图」限制的对照见
+超限时**本地拦下并给出可执行的缩放建议（不会自动改图）**。完整约束表与各档位像素值见
 [`references/cli-reference.md`](references/cli-reference.md)。
