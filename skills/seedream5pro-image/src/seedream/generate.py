@@ -117,6 +117,11 @@ def _get_headers() -> dict[str, str]:
 def _build_request_body(item: dict) -> dict:
     """构建 5.0-pro 专用请求体。
 
+    ⚠️ 维护者注意：有几个参数**必须显式下发**，不能依赖接口默认值，否则行为反直觉——
+    ``watermark`` 默认 ``true``（不传就带"AI 生成"水印）、``output_format`` 默认 ``jpeg``、
+    ``response_format`` 默认 ``url``（链接 24 小时后失效）。CLI 一律显式覆盖这三项，
+    因此在 CLI 这一层它们是"确定行为"，调用方（agent）无需知道接口默认值长什么样。
+
     :param item: 任务参数，包含 prompt、size、image 等字段
     :return: 发送给 API 的请求体字典
     """

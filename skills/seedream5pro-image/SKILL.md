@@ -184,18 +184,3 @@ seedream replay [<id>|last] [--run]     # 默认只预演、不消耗额度；�
 
 超限时**本地拦下并给出可执行的缩放建议（不会自动改图）**；与「LLM 读图」限制的对照见
 [`references/cli-reference.md`](references/cli-reference.md)。
-
-## 接口反直觉默认值（本技能一律显式覆盖）
-
-| 参数 | 接口默认值 | 本技能实际下发 |
-|------|-----------|---------------|
-| `watermark` | **`true`**（不传即加"AI 生成"水印） | 显式 `false`（加 `--watermark` 才带水印） |
-| `output_format` | **`jpeg`** | 显式 `png`（`--format` 可改；`cutout` 恒 png） |
-| `response_format` | **`url`**（链接仅 24 小时有效） | **强制 `b64_json`**，本地解码保存，规避 24 小时失效与防盗链 403 |
-| `size` | `2K`（图层拆分场景为 `auto`） | 显式 `2K`（`split` 默认即 `auto`） |
-| `optimize_prompt_options.mode` | `standard` | 显式 `standard`（`--optimize` 可改） |
-| `background` | `opaque` | 仅 `seedream cutout` 时下发 |
-| `layer_decomposition` | `false` | 仅 `seedream split` 时下发 |
-
-> ⚠️ 三个最容易踩的坑：**不传 `watermark` 会加水印** · **不传 `output_format` 得到 jpeg** ·
-> **不传 `response_format` 返回的是 24 小时失效的 URL**。
