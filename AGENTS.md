@@ -31,7 +31,7 @@ skills/<skill-name>/
 | 技能名称 | 描述 | 入口 |
 |----------|------|------|
 | `byted-web-search` | 火山引擎豆包搜索（Custom/Global 双引擎，含图搜图） | `python3 scripts/web_search.py` |
-| `seedream5pro-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/图层拆分/透明背景/标记预览/生成记录） | `seedream draw` · `edit` · `split` · `cutout` · `mark` · `ls` |
+| `seedream5pro-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/图层拆分/透明背景/标记预览/生成记录） | `seedream draw` · `edit` · `split` · `cutout` · `mark` · `ls` · `show` · `replay` |
 
 ## Agent 交互规则
 
@@ -88,7 +88,7 @@ Agent 需根据任务类型选择不同的提示词策略：
 
 - **图层拆分的 prompt 可省略**：不传 `-p` 时模型自动识别主要元素；也可用自然语言指定拆分对象，或用 `<bbox>` 像素坐标精准圈定区域
 - **图层拆分约束**：仅 1 张输入图、仅 png/jpeg、size 仅档位（含 `auto`）、不支持自定义宽x高；任一图层失败即整体报错
-- **图层拆分的产出**：1 张底图（`z_index=0`）+ 最多 16 个透明 PNG 图层，元数据记录 `z_index` / 图层名 / 描述 / `bounding_box`
+- **图层拆分的产出**：1 张底图（`z_index=0`）+ 最多 16 个透明 PNG 图层；`run.json` 记录 `z_index` / 图层名 / 描述，坐标分两套：`bbox_base`+`bbox_base_size`（底图坐标系，**还原/重组用这个**）与 `bbox_pixel`+`prompt_fragment`（原图像素，**写 prompt 用这个**）
 - **透明背景**：用 `seedream cutout <图>`，仅图生图 + 1 张带透明通道的图，输出**恒为 png**（不提供格式选项）
 
 ### 7. 坐标口径（全流程统一）
@@ -96,9 +96,9 @@ Agent 需根据任务类型选择不同的提示词策略：
 - **agent 只写原图像素**：直接在 prompt 里写 `<point>x y</point>` / `<bbox>x1 y1 x2 y2</bbox>`，坐标从 `mark` 网格上读数即可
 - **CLI 负责校验 + 换算**：`seedream edit` / `seedream split` 在发出去之前自动把像素标签换成接口要求的 0~999；`mark` 与图层拆分给出的成品标签**也是像素**，可直接粘
 - 校验清单：个数不对 / 非整数 / 超范围 / 多图未标归属 / 有标签却无参考图 → **报错中止**；写错标签名、框写反、逗号分隔 → **提示**并继续
-- 对照表：`mark` 的输入/网格刻度/输出 `pixel` = 像素；`mark` 的 `fragments`、图层拆分的 `prompt_fragment` = **工具算好的 0~999，直接复制**；图层拆分的 `bounding_box.absolute` = 像素但属**底图坐标系**（换算须用底图尺寸，不是原图尺寸）
-- ⚠️ 接口返回的 `bounding_box.normalized` 是 **0~1000**、而 prompt 标签要 **0~999**，两者不同源 → 技能**不输出**该字段
-- **坐标只有一种形态：原图像素**。CLI 的任何输出都只有像素；坐标格式的转换完全在 CLI 内部完成（`--norm` 这类回灌入口在 v3.0 已移除）
+- 对照表：`mark` 的输入/网格刻度/输出 `pixel` = 像素；`mark` 的 `fragments`、图层拆分的 `prompt_fragment`、`run.json.prompt` = **像素，可直接复制复用**；图层拆分的 `bbox_base` = 像素但属**底图坐标系**（配 `bbox_base_size` 使用）
+- ⚠️ 接口返回的 `bounding_box.normalized` 是 **0~1000**、而 prompt 标签要 **0~999**，两者不同源 → 技能**不输出**该字段；`run.json.prompt_sent` 是唯一的换算后记录，**只写不读**
+- **坐标只有一种形态：原图像素**。CLI 的对外输出只有像素；转换完全在 CLI 内部完成（`--norm` 这类回灌入口在 v3.0 已移除），唯一例外是 `run.json.prompt_sent`（换算后请求原文，仅供审计，**不要当输入**）
 
 ### 8. 标记预览（agent 侧交互式编辑）
 
@@ -113,7 +113,7 @@ Agent 需根据任务类型选择不同的提示词策略：
 
 ### 9. 编码规范
 
-项目遵循 `.trae/rules/code-style.md` 中定义的 Python 编码规范，核心要点：
+本项目的 Python 编码规范，核心要点：
 - 使用 `|` 运算符表示联合类型
 - 集合抽象基类从 `collections.abc` 导入
 - 无返回值函数必须标注 `-> None`
@@ -147,7 +147,7 @@ export SEEDREAM_HOME="/path/to/data"
 每次生成一个目录，落在**数据根目录**（`$SEEDREAM_HOME`，未设置时为当前工作目录下的 `.seedream/`）：
 
 ```
-<数据根>/.seedream/
+<数据根>/
 ├── index.jsonl                     # 一行一条任务摘要，ls 直接读它
 ├── runs/<YYYYMMDD-HHMMSS-xxxx>/    # 一次生成 = 一个目录
 │   ├── run.json                    # 提示词 / 参数 / 输入 / 产物（唯一真相）

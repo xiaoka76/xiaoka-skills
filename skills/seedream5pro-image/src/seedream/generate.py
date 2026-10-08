@@ -33,13 +33,15 @@ from .config import (
 _http_client: httpx.Client | None = None
 
 
-def _get_client(timeout: float = 300.0) -> httpx.Client:
-    """获取或创建模块级 httpx.Client，每次调用时更新超时设置。"""
+def _get_client() -> httpx.Client:
+    """获取模块级 httpx.Client（连接池复用）。
+
+    超时**按请求传**（``client.post(..., timeout=...)``），不改写共享实例的状态——
+    否则并发或连续调用会互相覆盖超时设置。
+    """
     global _http_client
     if _http_client is None:
-        _http_client = httpx.Client(timeout=httpx.Timeout(timeout))
-    else:
-        _http_client.timeout = httpx.Timeout(timeout)
+        _http_client = httpx.Client()
     return _http_client
 
 
@@ -146,12 +148,13 @@ def _call_api(item: dict, timeout: int) -> dict:
     """
     url = f"{API_BASE}/images/generations"
     body = _build_request_body(item)
-    client = _get_client(float(timeout))
+    client = _get_client()
 
     last_error: Exception | None = None
     for attempt in range(_MAX_RETRIES):
         try:
-            resp = client.post(url, headers=_get_headers(), json=body)
+            resp = client.post(url, headers=_get_headers(), json=body,
+                            timeout=httpx.Timeout(float(timeout)))
             if resp.status_code >= 400:
                 detail = resp.text
                 try:
@@ -283,7 +286,7 @@ def probe_image_size(path: str) -> tuple[int, int] | None:
         return None
 
 
-def _resolve_image_path(path: str) -> str:
+def resolve_image_path(path: str) -> str:
     """
     将图片路径解析为 API 可接受的格式。
 
@@ -326,7 +329,7 @@ def bbox_base_to_input(
     bbox: list[int],
     base_size: str | tuple[int, int],
     input_size: tuple[int, int] | list[int],
-) -> list[int]:
+) -> list[int] | None:
     """把图层 bbox 从**输出底图坐标系**换算到**原输入图**的像素坐标系。
 
     图层拆分的 ``bounding_box.absolute`` 用的是输出底图坐标（分辨率＝size 档位，
@@ -336,15 +339,19 @@ def bbox_base_to_input(
     :param bbox: 底图坐标系下的 ``[left, top, right, bottom]``
     :param base_size: 底图尺寸（``"1664x2496"`` 或 ``(1664, 2496)``）
     :param input_size: 原输入图尺寸 ``(宽, 高)``
-    :return: 原输入图像素坐标系下的 bbox
+    :return: 原输入图像素坐标系下的 bbox；**底图尺寸无法解析时返回 None**
+        （宁可明确"换算不了"，也不要回退成一组看起来合理、实际坐标错误的标签）
     """
     if isinstance(base_size, str):
-        base_w, base_h = (int(v) for v in base_size.lower().split("x"))
+        try:
+            base_w, base_h = (int(v) for v in base_size.lower().split("x"))
+        except (ValueError, TypeError):
+            return None
     else:
         base_w, base_h = base_size
     in_w, in_h = input_size
-    if base_w <= 0 or base_h <= 0:
-        return list(bbox)
+    if base_w <= 0 or base_h <= 0 or in_w <= 0 or in_h <= 0:
+        return None
     scaled = [
         round(bbox[0] * in_w / base_w), round(bbox[1] * in_h / base_h),
         round(bbox[2] * in_w / base_w), round(bbox[3] * in_h / base_h),
@@ -464,24 +471,44 @@ def single_generate(
                 base = next((r for r in records if r.get("z_index") == 0), None)
                 base_size = (base or {}).get("size")
                 input_size = item.get("input_size")
-                if base_size:
-                    for rec in records:
-                        box = (rec.get("bounding_box") or {}).get("absolute")
-                        if rec.get("z_index") and isinstance(box, list) and len(box) == 4:
-                            rec["bbox_base"] = box
-                            rec["bbox_base_size"] = base_size
-                            if input_size:
-                                # 对外一律原图像素：换算回输入图坐标系，标签可直接粘进 prompt
-                                px = bbox_base_to_input(box, base_size, input_size)
-                                rec["bbox_pixel"] = px
-                                rec["prompt_fragment"] = (
-                                    f"<bbox>{' '.join(str(v) for v in px)}</bbox>"
-                                )
-                            else:
-                                rec["bbox_note"] = (
-                                    "参考图尺寸未知（网络 URL？），无法把底图坐标换算成原图像素标签；"
-                                    "改用本地图片路径即可获得可直接粘贴的 <bbox>"
-                                )
+                for rec in records:
+                    box = (rec.get("bounding_box") or {}).get("absolute")
+                    if not (rec.get("z_index") and isinstance(box, list) and len(box) == 4):
+                        continue
+                    # 底图坐标系原值始终保留：还原 / 重组图层要靠它（图层分辨率 = 底图分辨率）
+                    rec["bbox_base"] = box
+                    rec["bbox_base_size"] = base_size
+                    if not base_size:
+                        rec["bbox_note"] = (
+                            "接口未返回底图尺寸，无法换算成原图像素标签；"
+                            "可直接用 bbox_base + bbox_base_size 做图层还原"
+                        )
+                        continue
+                    if not input_size:
+                        rec["bbox_note"] = (
+                            "参考图尺寸未知（网络 URL？），无法把底图坐标换算成原图像素标签；"
+                            "改用本地图片路径即可获得可直接粘贴的 <bbox>"
+                        )
+                        continue
+                    # 单独兜住：换算失败只降级为提示，不能把一次已经成功、已经花了额度的生成判成 error
+                    try:
+                        px = bbox_base_to_input(box, base_size, input_size)
+                    except (ValueError, TypeError, ZeroDivisionError) as e:
+                        rec["bbox_note"] = (
+                            f"底图坐标换算失败（{type(e).__name__}: {e}），"
+                            f"已保留 bbox_base 原值供还原使用"
+                        )
+                        continue
+                    if px is None:
+                        # 底图尺寸不是 WxH 形态（或非正）→ 明确说换算不了，不给出可疑标签
+                        rec["bbox_note"] = (
+                            f"底图尺寸 {base_size!r} 不是「宽x高」形态，无法换算成原图像素标签；"
+                            f"已保留 bbox_base 原值供还原使用"
+                        )
+                        continue
+                    # 对外一律原图像素：换算回输入图坐标系，标签可直接粘进 prompt
+                    rec["bbox_pixel"] = px
+                    rec["prompt_fragment"] = f"<bbox>{' '.join(str(v) for v in px)}</bbox>"
             results = [r["path"] for r in records]
             return {
                 "status": "success",

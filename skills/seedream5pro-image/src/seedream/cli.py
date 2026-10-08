@@ -32,7 +32,7 @@ from seedream.config import (
     resolve_home,
 )
 from seedream.generate import (
-    _resolve_image_path,
+    resolve_image_path,
     probe_image_size,
     single_generate,
 )
@@ -130,7 +130,7 @@ def _apply_prompt_tags(conv: ConvertResult, task: dict) -> None:
     - 换算成功：记下原始提示词，把换算后的提示词交给后续流程
 
     :param conv: :func:`convert_prompt_tags` 的结果
-    :param task: 生成任务字典（原地修改 prompt / prompt_raw）
+    :param task: 生成任务字典（原地修改 prompt / prompt_received）
     :raises typer.Exit: 存在 error 时退出
     """
     for issue in conv.errors:
@@ -146,7 +146,7 @@ def _apply_prompt_tags(conv: ConvertResult, task: dict) -> None:
             f"  已校验并换算 {conv.converted} 个像素坐标标签（坐标格式由本命令自动处理，无需自己算）",
             fg=typer.colors.GREEN,
         )
-        task["prompt_raw"] = task.get("prompt", "")
+        task["prompt_received"] = task.get("prompt", "")
         task["prompt"] = conv.prompt
 
 
@@ -204,15 +204,14 @@ def _execute(
     timeout: int,
     layer_decomposition: bool = False,
     background: str = "opaque",
-    converted_already: bool = False,
     replayed_from: str | None = None,
 ) -> dict:
     """
     所有生成子命令的执行主干：建任务记录 → 落参考图 → 发请求 → 归档。
 
     :param kind: 意图（``draw``/``edit``/``split``/``cutout``），即子命令名
-    :param prompt: 提示词；图层拆分场景可省略（为空时不发送该字段）
-    :param images: 参考图（本地路径或 http(s) URL）
+    :param prompt: 提示词，**必须是原始像素标签形态**（图层拆分场景可省略）
+    :param images: 参考图（本地路径、data URI 或 http(s) URL）
     :param size: 分辨率档位或自定义宽x高
     :param output_format: ``png`` / ``jpeg``
     :param watermark: 是否加水印
@@ -220,7 +219,6 @@ def _execute(
     :param timeout: API 超时秒数
     :param layer_decomposition: 图层拆分开关
     :param background: ``opaque`` / ``transparent``
-    :param converted_already: prompt 是否已是「换算后」的成品（replay 场景不再二次换算）
     :param replayed_from: 复现来源的 run id
     :return: 生成结果字典（含 run_id / run_dir / outputs）
     :raises typer.Exit: 参考图缺失或不可读
@@ -240,7 +238,7 @@ def _execute(
     sizes: list[tuple[int, int] | None] = []
     for ref in images:
         try:
-            resolved.append(_resolve_image_path(ref))
+            resolved.append(resolve_image_path(ref))
         except (FileNotFoundError, ValueError) as e:
             typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1)
@@ -261,9 +259,10 @@ def _execute(
     if resolved:
         task["image"] = resolved if len(resolved) > 1 else resolved[0]
 
-    # ③ 坐标标签校验 + 换算（replay 场景的 prompt 已是成品，跳过）
-    if not converted_already:
-        _apply_prompt_tags(convert_prompt_tags(task["prompt"], sizes), task)
+    # ③ 坐标标签校验 + 换算
+    # 只有这一个入口：无论首次生成还是 replay，喂进来的都是**原始像素提示词**，
+    # 换算后另存为 prompt_sent（仅审计）。这样「0~999 值再次被当像素」的路径根本不存在。
+    _apply_prompt_tags(convert_prompt_tags(task["prompt"], sizes), task)
     if len(sizes) == 1 and sizes[0]:
         # 供图层拆分把底图坐标换算回原图像素
         task["input_size"] = list(sizes[0])
@@ -287,6 +286,10 @@ def _execute(
         "layer_decomposition": layer_decomposition,
         "background": background,
     }
+    # 两个提示词，口径必须分开（否则 agent 拿到换算后的值再粘一次 = 静默二次换算）：
+    #   prompt      —— CLI 接收的**原始**提示词（含像素标签）→ 复用 / 粘贴用这个
+    #   prompt_sent —— 实际发给接口的（已换算）、**仅供审计**，任何时候都不要当输入
+    prompt_received = task.get("prompt_received") or task.get("prompt", "")
     data: dict = {
         "run_id": run_id,
         "kind": kind,
@@ -294,8 +297,8 @@ def _execute(
         "finished_at": None,
         "status": "running",
         "error": None,
-        "prompt": task.get("prompt", ""),
-        "prompt_raw": task.get("prompt_raw"),
+        "prompt": prompt_received,
+        "prompt_sent": task.get("prompt", ""),
         "params": params,
         "inputs": inputs,
         "outputs": [],
@@ -306,11 +309,11 @@ def _execute(
 
     _print_header(kind, run_id, run_directory, task, inputs, params)
 
-    # ④ 发请求
+    # ⑤ 发请求
     outputs_dir = str(run_directory / "outputs")
     result = single_generate(task, outputs_dir, timeout=timeout)
 
-    # ⑤ 归档
+    # ⑥ 归档
     data["finished_at"] = _now()
     data["status"] = result.get("status", "error")
     data["error"] = result.get("error")
@@ -324,6 +327,11 @@ def _execute(
             "z_index": rec.get("z_index"),
             "name": rec.get("name"),
             "description": rec.get("description"),
+            # 图层坐标分两套口径，用途不同、不要混用：
+            #   bbox_base  —— 底图坐标系（还原 / 重组图层用这个，配上 bbox_base_size）
+            #   bbox_pixel —— 原输入图坐标系（写进 prompt 用这个）
+            "bbox_base": rec.get("bbox_base"),
+            "bbox_base_size": rec.get("bbox_base_size"),
             "bbox_pixel": rec.get("bbox_pixel"),
             "prompt_fragment": rec.get("prompt_fragment"),
             "bbox_note": rec.get("bbox_note"),
@@ -358,9 +366,10 @@ def _print_header(
     typer.echo(f"  Seedream 5.0 Pro · {kind}")
     typer.echo(f"  任务: {run_id}")
     typer.echo(f"  目录: {run_directory}")
-    if task.get("prompt"):
-        prompt = task["prompt"]
-        typer.echo(f"  提示词: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
+    # 打印人看的那一份：有像素标签时用原始版（换算后的仅供审计）
+    shown_prompt = task.get("prompt_received") or task.get("prompt") or ""
+    if shown_prompt:
+        typer.echo(f"  提示词: {shown_prompt[:100]}{'...' if len(shown_prompt) > 100 else ''}")
     typer.echo(f"  参数: size={params['size']} format={params['output_format']}"
                + (" 图层拆分=开" if params["layer_decomposition"] else "")
                + (" 背景=透明" if params["background"] == "transparent" else ""))
@@ -410,6 +419,8 @@ def _print_result(result: dict) -> None:
 # ── 生成子命令 ────────────────────────────────────────────────────────────────
 
 _SizeOpt = Annotated[str, typer.Option("--size", "-s", help="分辨率: 1K / 1.5K / 2K / 宽x高")]
+# 图层拆分不支持自定义宽x高，帮助文案要分开写，否则 --help 会承诺一个用不了的能力
+_SplitSizeOpt = Annotated[str, typer.Option("--size", "-s", help="分辨率: 1K / 1.5K / 2K / auto（不支持自定义宽x高）")]
 _FormatOpt = Annotated[Literal["png", "jpeg"], typer.Option("--format", help="输出格式")]
 _WatermarkOpt = Annotated[bool, typer.Option("--watermark", help="启用水印（默认关闭）")]
 _OptimizeOpt = Annotated[Literal["standard", "fast"], typer.Option("--optimize", help="提示词优化模式")]
@@ -486,7 +497,7 @@ def edit(
 def split(
     image: Annotated[str, typer.Argument(help="要拆分的图片（限 1 张）")],
     prompt: Annotated[str | None, typer.Option("--prompt", "-p", help="可选：指定拆分意图，不传则自动识别主要元素")] = None,
-    size: _SizeOpt = "auto",
+    size: _SplitSizeOpt = "auto",
     output_format: _FormatOpt = "png",
     watermark: _WatermarkOpt = False,
     optimize: _OptimizeOpt = "standard",
@@ -765,9 +776,11 @@ def show(
     typer.echo(f"状态: {data.get('status', '?')}    时间: {data.get('created_at', '?')}")
     if data.get("replayed_from"):
         typer.echo(f"复现自: {data['replayed_from']}")
-    typer.echo(f"提示词: {data.get('prompt') or '(空)'}")
-    if data.get("prompt_raw"):
-        typer.echo(f"原始提示词(像素标签): {data['prompt_raw']}")
+    # 主字段一律是**原始像素提示词**（可直接复用/粘贴）；换算后的那份只作审计，单独标注
+    typer.echo(f"提示词(原图像素，可直接复用): {data.get('prompt') or '(空)'}")
+    sent = data.get("prompt_sent") or ""
+    if sent and sent != (data.get("prompt") or ""):
+        typer.secho(f"实际请求(已换算，仅供审计，勿再粘贴): {sent}", fg=typer.colors.YELLOW)
     params = data.get("params", {})
     typer.echo("参数: " + "  ".join(f"{k}={v}" for k, v in params.items()))
     if data.get("error"):
@@ -836,6 +849,8 @@ def replay(
         raise typer.Exit(1)
 
     params = data.get("params", {})
+    # 复现喂的是**原始像素提示词**（run.json.prompt），重新走一遍校验换算；
+    # 绝不使用 prompt_sent —— 那已经是换算后的值，再换算一次就是静默错位。
     prompt = data.get("prompt") or ""
     # 参考图优先用任务目录里的副本（自包含，原图移位也能复现），缺失时退回原始来源
     images: list[str] = []
@@ -875,7 +890,6 @@ def replay(
         timeout=timeout,
         layer_decomposition=bool(params.get("layer_decomposition", False)),
         background=params.get("background", "opaque"),
-        converted_already=True,   # 记录里的 prompt 已是换算后的成品，避免二次换算
         replayed_from=data.get("run_id", source_id),
     )
     _print_result(result)

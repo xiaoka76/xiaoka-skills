@@ -146,10 +146,6 @@ xiaoka-skills/
 │           ├── prompt-writing.md
 │           └── <category>/
 │               └── <template>.md
-├── .trae/
-│   ├── rules/
-│   │   └── code-style.md    # Python 编码规范
-│   └── specs/               # 开发规范文档
 ├── AGENTS.md                # AI Agent 交互指南
 ├── LICENSE                  # MIT 许可证
 └── README.md

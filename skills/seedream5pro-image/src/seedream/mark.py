@@ -10,7 +10,8 @@ Seedream 5.0 Pro - 标记预览（agent 交互式编辑辅助）
 - **归一化（0~999）在本模块内部完成**。模型只认归一化坐标（官方交互编辑指南：
   "前端将操作位置转换为归一化坐标（范围 0~999）"），所以转换必须由工具侧承担，
   不能让 agent 手算。
-- ``--norm`` 可直接传入 0~999（例如把接口返回的 ``bounding_box`` 回灌）。
+- 归一化值**不出现在本模块的任何对外输出里**（v3.0 起连 ``--norm`` 输入口也已移除）：
+  坐标只有「原图像素」一种形态。
 
 渲染分三层，顺序不可调换：
 
@@ -34,7 +35,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .config import PREVIEW_MAX_BYTES, resolve_home
 
-# 与 WebUI 保持同一套配色（src/seedream/static/app.js: ANNOTATION_COLORS）
+# 标记配色：高对比、彼此可区分，10 色循环
 PALETTE: list[str] = [
     "#ff5c8a", "#7c5cff", "#00a7e1", "#00b894", "#ff9f1c",
     "#e84393", "#2d9cdb", "#9b5de5", "#f15bb5", "#43aa8b",

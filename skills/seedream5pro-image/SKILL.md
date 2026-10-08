@@ -41,7 +41,7 @@ version: 3.0.0
 | | 图片生成场景 | 图层拆分场景 |
 |---|---|---|
 | 选择方式 | 档位 `1K`/`1.5K`/`2K`（**推荐**）或自定义 `宽x高`，不可混用 | **仅支持档位**，不支持自定义宽x高 |
-| 默认值 | `2K` | `auto`（接口默认；本 CLI 默认传 `2K`，需自适应请显式传 `auto`） |
+| 默认值 | `2K` | `auto`（接口默认；`seedream split` 的默认值也是 `auto`，无需显式传） |
 | 可选值 | `1K`、`1.5K`、`2K` | `1K`、`1.5K`、`2K`、`auto` |
 | 自定义像素 | 总像素 921600~4624220，宽高比 1/16~16 | — |
 
@@ -139,10 +139,14 @@ version: 3.0.0
 | `mark` 给出的成品标签 | **原图像素**，可直接粘进 prompt | — |
 | 图层拆分给出的 `prompt_fragment` | **原图像素**（已从底图坐标系换算回输入图） | — |
 | 发给接口之前 | 校验 + 转换成接口需要的格式 | **CLI 内部**（`edit` / `split`） |
-| CLI 的任何输出 | **永远只有像素** | — |
+| `show` / `ls` / 命令输出 | **永远只有像素** | — |
+| `run.json` | 两版都留：`prompt`＝像素（**复用用这个**）· `prompt_sent`＝换算后（**仅供审计**） | — |
 
-> 坐标只有一种形态：**原图像素**。转换是工具内部的事，交互过程中不会出现第二种坐标，
-> 你也不需要知道接口最终收到了什么。
+> 坐标只有一种形态：**原图像素**。转换是工具内部的事，交互过程中不会出现第二种坐标。
+>
+> 唯一例外是 `run.json` 里的 `prompt_sent`——那是**已经换算过**的请求原文，只为事后审计，
+> **任何时候都不要拿它当输入**（把 0~999 的值再当像素换算一次 = 静默落到错误区域）。
+> 要复用，就用 `prompt`，或者直接 `seedream replay`。
 
 ### 坐标标签的校验清单（`edit` / `split`）
 
@@ -433,7 +437,7 @@ seedream split ./poster.png \
 ```bash
 # 1) 先拆分（每个图层都会给出像素 bbox + 可直接用的 <bbox> 标签）
 seedream split photo.png --size 2K
-#    L6 `热咖啡杯带热气`  bbox(像素，底图坐标系)=[217, 1118, 466, 1595]
+#    L6 `热咖啡杯带热气`  bbox(原图像素)=[217, 1118, 466, 1595]
 #                        可直接粘进 prompt: <bbox>217 1118 466 1595</bbox>
 
 # 2) 直接拿那个标签组装编辑指令（不用自己量坐标）
@@ -524,7 +528,7 @@ seedream draw "..." --optimize fast
 | `watermark` | **`true`**（不传即加"AI 生成"水印） | 显式 `false`（加 `--watermark` 才带水印） |
 | `output_format` | **`jpeg`** | 显式 `png`（`--format` 可改；`cutout` 恒为 png） |
 | `response_format` | **`url`**（链接仅 24 小时有效） | **强制 `b64_json`**，本地解码保存，规避 24 小时失效与防盗链 403 |
-| `size` | `2K`（**图层拆分场景为 `auto`**） | 显式 `2K`（`--size` 可改；图层拆分需自适应请显式传 `auto`） |
+| `size` | `2K`（**图层拆分场景为 `auto`**） | 显式 `2K`（`--size` 可改；`split` 默认即 `auto`） |
 | `optimize_prompt_options.mode` | `standard` | 显式 `standard`（`--optimize` 可改） |
 | `background` | `opaque` | 仅在 `seedream cutout` 时下发 |
 | `layer_decomposition` | `false` | 仅在 `seedream split` 时下发 |
@@ -668,7 +672,7 @@ y_norm = round(y_px / 图片高度 * 1000)
 ### 目录结构
 
 ```
-<数据根>/.seedream/
+<数据根>/
 ├── index.jsonl                     # 一行一条任务摘要（append-only），ls 直接读它
 ├── runs/
 │   └── 20261008-143022-a1b2/       # 一次生成 = 一个目录（名字以时间开头，天然按时间排序）
@@ -683,10 +687,11 @@ y_norm = round(y_px / 图片高度 * 1000)
 | 字段 | 说明 |
 |------|------|
 | `kind` | `draw` / `edit` / `split` / `cutout` |
-| `prompt` / `prompt_raw` | 实际发送的提示词 / 含像素标签的原始提示词 |
+| `prompt` | CLI **实际接收**的提示词（含**原图像素**标签）—— **复用用这个** |
+| `prompt_sent` | **实际发给接口**的提示词（已换算）。**仅供审计，勿当输入** |
 | `params` | size / output_format / watermark / optimize / layer_decomposition / background |
 | `inputs[]` | 参考图 `{source, path, sha256, size, width, height}` —— **已落盘、可寻址** |
-| `outputs[]` | 产物 `{path, size, output_format, z_index, name, description, bbox_pixel, prompt_fragment}` |
+| `outputs[]` | 产物 `{path, size, output_format, z_index, name, description, bbox_base, bbox_base_size, bbox_pixel, prompt_fragment}` |
 | `status` / `error` | `pending` / `running` / `success` / `error` |
 
 ### 三个命令
@@ -866,8 +871,10 @@ A: 最多 10 张。图层拆分场景仅允许 1 张。
 A: 默认 2K。`1.5K` 与 `1K` 同价但画质更优，追求性价比时优先 1.5K。
 
 ### Q: 图层拆分怎么还原图层位置？
-A: 按 `z_index` 从小到大叠放，底图（`z_index=0`）铺底；每个图层的 `bounding_box.absolute` 给出它在
-**底图坐标系**中的像素位置，**要写进 prompt 就直接用工具给的 `prompt_fragment`**（已换算好的 `<bbox>` 标签）。
+A: 按 `z_index` 从小到大叠放，底图（`z_index=0`）铺底。`run.json` 里每个图层给两套坐标，**用途不同**：
+- `bbox_base` + `bbox_base_size`：**底图坐标系**（图层分辨率与底图一致）→ **还原 / 重组用这个**
+- `bbox_pixel` / `prompt_fragment`：**原输入图坐标系**（像素）→ **写进 prompt 继续编辑用这个**
+
 更多公式见「图层拆分」章节。
 
 ### Q: 图层拆分失败会怎样？

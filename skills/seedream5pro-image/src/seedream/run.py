@@ -27,20 +27,21 @@ import json
 import mimetypes
 import os
 import re
-import shutil
 import struct
 import uuid
 from datetime import datetime
 from pathlib import Path
 
 from .config import ensure_home, index_path, runs_dir
+from .generate import probe_image_size
 
 # ── 常量 ──────────────────────────────────────────────────────────────────────
 
 # 四种生成意图，与四个子命令一一对应
 RUN_KINDS: tuple[str, ...] = ("draw", "edit", "split", "cutout")
 
-RUN_ID_RE: re.Pattern[str] = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
+# run id 形态：YYYYMMDD-HHMMSS-<6 位随机十六进制>
+RUN_ID_RE: re.Pattern[str] = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{6}$")
 
 _VALID_STATUS: set[str] = {"pending", "running", "success", "error"}
 
@@ -50,11 +51,11 @@ _VALID_STATUS: set[str] = {"pending", "running", "success", "error"}
 
 def new_run_id() -> str:
     """
-    生成新的 run id，形如 ``20261008-143022-a1b2``（日期时间 + 4 位随机十六进制）。
+    生成新的 run id，形如 ``20261008-143022-a1b2c3``（日期时间 + 6 位随机十六进制）。
 
     :return: run id 字符串
     """
-    return f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:4]}"
+    return f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
 
 def run_dir(run_id: str) -> Path:
@@ -62,15 +63,31 @@ def run_dir(run_id: str) -> Path:
     return runs_dir() / run_id
 
 
+def _pick_free_run_id() -> str:
+    """
+    挑一个当前尚不存在的 run id。
+
+    同一秒内连续跑多个任务时，随机位再宽也可能撞上；这里显式查重，
+    避免两次任务被 ``mkdir(exist_ok=True)`` 合并进同一个目录、互相覆盖产物与记录。
+
+    :return: 未被占用的 run id
+    """
+    for _ in range(20):
+        candidate = new_run_id()
+        if not (runs_dir() / candidate).exists():
+            return candidate
+    raise RuntimeError("无法分配新的任务 id（同一秒内连续创建过多任务），请稍后重试")
+
+
 def create_run(run_id: str | None = None) -> tuple[str, Path]:
     """
     创建一次任务的目录骨架（run.json 由 :func:`save_run` 后续写入）。
 
-    :param run_id: 指定 run id；为 None 时自动生成
+    :param run_id: 指定 run id；为 None 时自动生成（并确保不与已有目录重名）
     :return: (run_id, run 目录路径) 元组
     """
     ensure_home()
-    rid = run_id or new_run_id()
+    rid = run_id or _pick_free_run_id()
     directory = runs_dir() / rid
     (directory / "inputs").mkdir(parents=True, exist_ok=True)
     (directory / "outputs").mkdir(parents=True, exist_ok=True)
@@ -260,13 +277,17 @@ def list_legacy_runs() -> list[dict]:
 
 def record_input(directory: Path, ref: str) -> dict:
     """
-    记录一张参考图：本地文件复制进 ``inputs/``（内容寻址命名），URL 只记链接。
+    记录一张参考图：本地文件/data URI 复制进 ``inputs/``（内容寻址命名），URL 只记链接。
 
     在**发请求之前**调用，因此即使生成失败，输入也已经被保存下来可复用。
 
+    三种输入形态都支持（与 :func:`seedream.generate.resolve_image_path` 的契约保持一致）：
+    本地路径、``data:image/...;base64,...``、``http(s)://``。
+
     :param directory: run 目录
-    :param ref: 用户传入的参考图（本地路径或 http(s) URL）
+    :param ref: 用户传入的参考图
     :return: 输入记录项 {source, path, sha256, size, width, height, label}
+    :raises FileNotFoundError: 本地路径不存在
     """
     if ref.startswith(("http://", "https://")):
         return {
@@ -279,26 +300,36 @@ def record_input(directory: Path, ref: str) -> dict:
             "label": ref,
         }
 
-    src = Path(ref).expanduser()
-    if not src.is_file():
-        raise FileNotFoundError(f"参考图不存在: {ref}")
+    if ref.startswith("data:image/"):
+        raw = data_url_to_bytes(ref)
+        ext = guess_ext_from_data_url(ref)
+        source = "(data URI)"
+        name = f"data-uri{ext}"
+    else:
+        src = Path(ref).expanduser()
+        if not src.is_file():
+            raise FileNotFoundError(f"参考图不存在: {ref}")
+        raw = src.read_bytes()
+        ext = src.suffix.lower() or ".png"
+        source = str(src.resolve())
+        name = src.name
 
-    raw = src.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
-    ext = src.suffix.lower() or ".png"
     target = Path(directory) / "inputs" / f"{digest[:12]}{ext}"
     if not target.exists():
-        shutil.copyfile(src, target)
+        target.write_bytes(raw)
 
-    width, height = read_image_dimensions(raw)
+    # 尺寸统一走 PIL（与 _execute 的校验同源），PIL 读不了时退回内置解析器
+    size = probe_image_size(str(target)) or read_image_dimensions(raw)
+    width, height = size
     return {
-        "source": str(src.resolve()),
+        "source": source,
         "path": str(target.resolve()),
         "sha256": digest,
         "size": len(raw),
         "width": width,
         "height": height,
-        "label": f"{src.name} ({width}x{height}, {len(raw) / 1024:.0f} KB)",
+        "label": f"{name} ({width}x{height}, {format_size(len(raw))})",
     }
 
 
@@ -378,11 +409,6 @@ def read_image_dimensions(data: bytes) -> tuple[int, int]:
 # ── 展示辅助 ──────────────────────────────────────────────────────────────────
 
 
-def format_coords(coords: list[int]) -> str:
-    """将坐标列表格式化为空格分隔的字符串。"""
-    return " ".join(str(c) for c in coords)
-
-
 def format_size(num_bytes: int | None) -> str:
     """把字节数格式化成人读字符串。"""
     if not num_bytes:
@@ -392,26 +418,8 @@ def format_size(num_bytes: int | None) -> str:
     return f"{num_bytes / 1024:.0f} KB"
 
 
-def data_url_summary(data_url: str) -> str:
-    """
-    从 data URL 中提取格式与大小摘要（用于展示历史输入）。
-
-    :param data_url: data URL 字符串
-    :return: 摘要字符串，如 ``[Base64] image/png, ~123 KB``
-    """
-    if not data_url or not data_url.startswith("data:image/"):
-        return "[no image]"
-    try:
-        header = data_url.split(",", 1)[0]
-        mime = header.split(":")[1].split(";")[0] if ":" in header else "?"
-        b64_part = data_url.split(",", 1)[1] if "," in data_url else ""
-        return f"[Base64] {mime}, ~{len(b64_part) * 3 // 4 // 1024} KB"
-    except (IndexError, ValueError):
-        return "[Base64]"
-
-
 def guess_ext_from_data_url(data_url: str) -> str:
-    """从 data URL 的 MIME 推断扩展名（回灌历史输入时用）。"""
+    """从 data URL 的 MIME 推断扩展名（data URI 作为参考图输入时用）。"""
     mime = data_url.split(",", 1)[0].split(":")[-1].split(";")[0]
     return mimetypes.guess_extension(mime or "image/png") or ".png"
 

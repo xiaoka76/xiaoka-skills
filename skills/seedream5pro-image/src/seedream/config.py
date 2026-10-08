@@ -6,7 +6,6 @@ Seedream 5.0 Pro - 配置常量
 
 import os
 import re
-from datetime import datetime
 from pathlib import Path
 
 # ── 模型配置 ──────────────────────────────────────────────────────────────────
@@ -76,9 +75,6 @@ def ensure_home() -> Path:
     runs_dir().mkdir(parents=True, exist_ok=True)
     return resolve_home()
 
-SUPPORTED_IMAGE_FORMATS: set[str] = {
-    "jpeg", "png", "webp", "bmp", "tiff", "gif", "heic", "heif",
-}
 
 MAX_REF_IMAGES: int = 10
 
@@ -90,9 +86,6 @@ MIN_REF_EDGE: int = 14
 MAX_REF_ASPECT: float = 16.0
 MAX_REF_BYTES: int = 30 * 1024 * 1024
 
-# 视觉理解（LLM 读图）的硬性像素范围：与图生图**完全一致** [196, 3600 万]。
-# 不同点在于宽高比（LLM [1/150,150] 更宽松）与文件大小（base64/url 单张 < 10MB）。
-LLM_PIXEL_RANGE: tuple[int, int] = (196, 36_000_000)
 
 # 平台内联预览上限：产物达到这个体积就自动降档重渲染
 PREVIEW_MAX_BYTES: int = 2 * 1024 * 1024
@@ -118,28 +111,3 @@ IMAGE_FORMAT_MAP: dict[str, str] = {
     ".gif": "gif",
     ".heic": "heic", ".heif": "heif",
 }
-
-
-def timestamp() -> str:
-    """返回当前时间戳字符串，格式为 YYYYMMDD-HHMMSS。"""
-    return datetime.now().strftime("%Y%m%d-%H%M%S")
-
-
-def iso_timestamp() -> str:
-    """返回当前 ISO 格式时间戳字符串，格式为 YYYY-MM-DDTHH:MM:SS。"""
-    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
-
-def ref_label(ref: str) -> str:
-    """
-    为参考图生成友好标签，避免将完整 base64 数据写入元数据。
-
-    :param ref: 参考图 URL 或 base64 data URI
-    :return: 友好标签字符串
-    """
-    if ref.startswith("data:image/"):
-        fmt_end = ref.index(";")
-        fmt = ref[11:fmt_end]  # "data:image/<fmt>;..." 中提取 <fmt>
-        size_kb = len(ref) * 3 // 4 / 1024  # base64 解码后的近似字节数
-        return f"[Base64] {fmt}, ~{size_kb:.0f} KB"
-    return ref

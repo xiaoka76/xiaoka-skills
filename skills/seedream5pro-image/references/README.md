@@ -7,14 +7,14 @@
 1. 先根据任务类型找到对应分类目录
 2. 打开具体模板 `.md` 文件
 3. 模板中的 `{argument name="..." default="..."}` 是需要替换的参数
-4. 渲染好的 JSON 展开成自然语言 prompt 字符串，传给 `generate.py`
+4. 渲染好的 JSON 展开成自然语言 prompt 字符串，作为 `seedream draw` / `edit` 的提示词
 
 ## 与 GPT Image 2 的区别
 
 - Seedream 不需要 `background`、`moderation`、`quality` 等 GPT Image 2 特有参数
 - Seedream 5.0-pro 对中文 prompt 支持良好，可以直接用中文写模板
 - 模板中的 JSON 只是「提示词结构」，不是 API 请求体
-- 最终传给 seedream_generate 的 `prompt` 字段是展开后的自然语言字符串
+- 最终发给接口的 `prompt` 字段是展开后的自然语言字符串
 
 ## 模板分类
 

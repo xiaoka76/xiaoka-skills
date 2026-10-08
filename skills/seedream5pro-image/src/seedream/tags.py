@@ -26,6 +26,15 @@ _PAIRED_TAG = re.compile(r"<\s*(point|bbox)\s*>(.*?)<\s*/\s*\1\s*>", re.IGNORECA
 # 任意尖括号片段——用来找"没配对/写错名"的可疑标签
 _ANY_TAG = re.compile(r"<[^<>\n]{0,60}>")
 
+# 开标签 + 紧随其后的标签体（到下一个尖括号为止），用来判断"是不是想写坐标标签"
+_TAG_START = re.compile(r"<\s*(?P<name>[^\s<>/]+)\s*>(?P<body>[^<>]*)")
+
+# 只由数字与分隔符组成的标签体（如 "120 180 640 760"），才是坐标标签的形态
+_NUMERIC_BODY = re.compile(r"^[\s\d,;，、+\-\.]+$")
+
+# 坐标标签的合法名称
+_COORD_NAMES: tuple[str, ...] = ("point", "bbox")
+
 # 标签前的图片指示：「图1」「图片 2」「第3张」「image1」
 _IMAGE_REF = re.compile(r"(?:图片|图|第|image)\s*([0-9０-９]+)")
 
@@ -76,12 +85,69 @@ def _image_index_before(prompt: str, position: int, image_count: int) -> int | N
     return 0 if image_count == 1 else None
 
 
-def _looks_like_typo(name: str) -> bool:
-    """判断标签名是否疑似 point/bbox 的笔误。"""
+def _edit_distance(a: str, b: str) -> int:
+    """Levenshtein 距离（只用于判断标签名是否近似 point / bbox）。"""
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _looks_like_coord_name(name: str) -> bool:
+    """判断标签名是否「本来想写 point / bbox」。"""
     low = name.lower().strip()
-    if low in ("point", "bbox"):
-        return False
-    return any(key in low for key in ("point", "box")) or low in ("poin", "bbx", "bboxx", "piont")
+    if low in _COORD_NAMES:
+        return True
+    if any(key in low for key in ("point", "box")):
+        return True
+    # 近形笔误（含转置，如 boox / piont）：限 3~8 字符，避免把 <bx>、<b> 这类短名误判
+    return 3 <= len(low) <= 8 and any(_edit_distance(low, t) <= 2 for t in _COORD_NAMES)
+
+
+def _looks_like_typo(name: str) -> bool:
+    """标签名疑似笔误（合法名称不算），仅用于选择更贴切的提示文案。"""
+    return _looks_like_coord_name(name) and name.lower().strip() not in _COORD_NAMES
+
+
+def _coordinate_candidates(prompt: str) -> list[tuple[str, str]]:
+    """列出 prompt 里**本来想写坐标标签**的片段。
+
+    普通文本里的尖括号（``<重点>``、``<div>``、``<3爱心>``）不应被当成坐标标签——
+    否则文生图提示词会被硬生生拒掉（审查修复）。只认两种情况：
+    1. 名称是 point / bbox 或其近形笔误（含未闭合的单个 ``<bbox>``）
+    2. 标签内容/标签体是纯数字 + 分隔符（``<boox>1 2 3 4</boox>``、``<120 180 640 760>``）
+
+    :return: ``[(可展示的片段, 标签名), ...]``
+    """
+    found: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    # 形态一：<名称> 后面跟标签体
+    for match in _TAG_START.finditer(prompt):
+        name = match.group("name")
+        body = match.group("body").strip()
+        if not (_looks_like_coord_name(name) or (body and _NUMERIC_BODY.match(body))):
+            continue
+        tag = f"<{name}>"
+        if tag not in seen:
+            seen.add(tag)
+            found.append((tag, name))
+
+    # 形态二：整个尖括号内容就是坐标（<120 180 640 760>）
+    for match in _ANY_TAG.finditer(prompt):
+        snippet = match.group(0)
+        inner = snippet.strip("<>").strip()
+        if not (inner and _NUMERIC_BODY.match(inner)) or snippet in seen:
+            continue
+        seen.add(snippet)
+        found.append((snippet, inner.split()[0]))
+
+    return found
 
 
 def convert_prompt_tags(
@@ -99,7 +165,9 @@ def convert_prompt_tags(
     if not prompt:
         return result
 
-    has_tag = bool(_PAIRED_TAG.search(prompt)) or bool(_ANY_TAG.search(prompt))
+    # 只有"确实想写坐标标签"的片段才算标签：普通尖括号文本（<重点>/<div>）不算，
+    # 否则文生图提示词里出现尖括号就会被误判成"有标签却没参考图"而直接报错
+    has_tag = bool(_PAIRED_TAG.search(prompt)) or bool(_coordinate_candidates(prompt))
     if has_tag and not image_sizes:
         result.issues.append(TagIssue(
             "error",
@@ -185,8 +253,10 @@ def convert_prompt_tags(
         width, height = size
 
         # ── 范围校验 ──
+        # 上界取「图片宽高」而不是「宽高-1」：mark 的网格就把右/下边界标成 x=width / y=height，
+        # 按网格读数写出来的坐标必须被接受（宽高等价于贴边，随后落到最后一个像素）
         dims = [width, height] if needed == 2 else [width, height, width, height]
-        over = [(v, d) for v, d in zip(values, dims) if v < 0 or v > d - 1]
+        over = [(v, d) for v, d in zip(values, dims) if v < 0 or v > d]
         if over:
             v, d = over[0]
             result.issues.append(TagIssue(
@@ -197,6 +267,7 @@ def convert_prompt_tags(
             out.append(span_text)
             cursor = match.end()
             continue
+        values = [max(0, min(v, d - 1)) for v, d in zip(values, dims)]
 
         # ── 疑似错误格式检测 ──
         if needed == 4 and (values[0] > values[2] or values[1] > values[3]):
@@ -220,23 +291,19 @@ def convert_prompt_tags(
     out.append(prompt[cursor:])
     result.prompt = "".join(out)
 
-    # ── 配对之外的可疑片段（只在残留文本里找）──
+    # ── 配对之外的可疑片段（只在残留文本里找，且只认"确实想写坐标标签"的片段）──
     seen: set[str] = set()
-    for leftover in _ANY_TAG.finditer("".join(residual)):
-        snippet = leftover.group(0)
-        name_seen = snippet.strip("<>").strip().lstrip("/").split()[0] if snippet.strip("<>").strip() else snippet
+    for snippet, name_seen in _coordinate_candidates("".join(residual)):
         if name_seen in seen:       # 同一处笔误（开/闭标签各出现一次）只报一次
             continue
         seen.add(name_seen)
-        inner = snippet.strip("<>").strip()
-        name = inner.split()[0] if inner.split() else inner
-        if _looks_like_typo(name):
+        if _looks_like_typo(name_seen):
             result.issues.append(TagIssue(
                 "warning",
                 f"prompt 里有疑似坐标标签的片段 {snippet}——名称写错了？"
                 f"正确写法：<point>x y</point> / <bbox>x1 y1 x2 y2</bbox>",
             ))
-        elif inner and (any(ch.isdigit() for ch in inner) or name.lower() in ("point", "bbox")):
+        else:
             result.issues.append(TagIssue(
                 "warning",
                 f"prompt 里有未闭合或格式可疑的坐标片段 {snippet}——"
