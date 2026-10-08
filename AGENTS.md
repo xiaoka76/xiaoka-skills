@@ -149,7 +149,7 @@ export SEEDREAM_HOME="/path/to/data"
 ```
 <数据根>/
 ├── index.jsonl                     # 一行一条任务摘要，ls 直接读它
-├── runs/<YYYYMMDD-HHMMSS-xxxxxx>/    # 一次生成 = 一个目录
+├── runs/<YYYYMMDD-HHMMSS-xxxxxx>/  # 一次生成 = 一个目录
 │   ├── run.json                    # 提示词 / 参数 / 输入 / 产物（唯一真相）
 │   ├── inputs/                     # 参考图副本（sha256 命名，可寻址）
 │   └── outputs/                    # 产物（图层拆分：底图 + L01…L16）

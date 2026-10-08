@@ -8,7 +8,7 @@
     .seedream/
     ├── index.jsonl                  # append-only，一行一条，供 ls 直接读
     └── runs/
-        └── 20261008-143022-a1b2/
+        └── 20261008-143022-a1b2c3/
             ├── run.json             # 唯一真相：这图是怎么来的
             ├── inputs/              # 参考图副本（内容寻址命名，可复用）
             └── outputs/             # 产物

@@ -113,9 +113,6 @@ def _looks_like_coord_name(name: str) -> bool:
     return 3 <= len(low) <= 6 and any(_edit_distance(low, t) <= 2 for t in _COORD_NAMES)
 
 
-def _looks_like_typo(name: str) -> bool:
-    """标签名疑似笔误（合法名称不算），仅用于选择更贴切的提示文案。"""
-    return _looks_like_coord_name(name) and name.lower().strip() not in _COORD_NAMES
 
 
 def _numeric_token_count(text: str) -> int:
@@ -323,17 +320,21 @@ def convert_prompt_tags(
         if name_seen in seen:       # 同一处笔误（开/闭标签各出现一次）只报一次
             continue
         seen.add(name_seen)
-        if _looks_like_typo(name_seen):
-            result.issues.append(TagIssue(
-                "warning",
-                f"prompt 里有疑似坐标标签的片段 {snippet}——名称写错了？"
-                f"正确写法：<point>x y</point> / <bbox>x1 y1 x2 y2</bbox>",
-            ))
-        else:
+        if name_seen.lower().strip() in _STRICT_NAMES:
+            # 名称合法但没配对 / 没内容（<bbox> / <bbox>100 200 …）
             result.issues.append(TagIssue(
                 "warning",
                 f"prompt 里有未闭合或格式可疑的坐标片段 {snippet}——"
                 f"正确写法：<point>x y</point> / <bbox>x1 y1 x2 y2</bbox>",
+            ))
+        else:
+            # 名称近似或只是含 box/point 字样（<boox> / <mybox> / <checkbox>）。
+            # 措辞保持中性：仅凭形状无法断言用户写错了，给语法、允许忽略即可。
+            result.issues.append(TagIssue(
+                "warning",
+                f"prompt 里有形如坐标标签的片段 {snippet}；"
+                f"若你想写坐标，正确写法是 <point>x y</point> / <bbox>x1 y1 x2 y2</bbox>；"
+                f"若不是，可以忽略",
             ))
 
     return result
