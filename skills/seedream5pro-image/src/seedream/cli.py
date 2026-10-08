@@ -1,12 +1,17 @@
 """
 Seedream 5.0 Pro 图像生成命令行工具
 
-统一的 CLI 入口，提供 generate、session、webui 三个子命令组。
+四个生成子命令按「意图」划分，参数集合即该场景必需的信息：
 
-用法:
-  seedream generate -p "一只猫" --size 2K
-  seedream session summary <path>
-  seedream webui --port 8000
+  seedream draw   "<提示词>"                        文生图
+  seedream edit   "<编辑指令>" --images <图...>      图生图 / 交互编辑
+  seedream split  <图>                              图层拆分
+  seedream cutout <图>                              透明背景素材
+  seedream mark   <图> --box ...                    标记预览与坐标标签
+  seedream ls / show / replay                       任务记录（可复用）
+
+每次生成都会在数据根目录（``$SEEDREAM_HOME`` 或 ``./.seedream``）落地一条完整记录：
+提示词、参考图副本、参数、产物 —— 因此任何一张图都能追回"它是怎么做出来的"。
 """
 
 from __future__ import annotations
@@ -18,61 +23,68 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import typer
-import uvicorn
 
 from seedream.config import (
     ALPHA_LESS_FORMATS,
     API_KEY,
-    DEFAULT_OUTPUT_DIR,
     MAX_REF_IMAGES,
     SIZE_TIERS,
+    resolve_home,
 )
-from seedream.generate import _resolve_image_path, probe_image_size, single_generate
+from seedream.generate import (
+    _resolve_image_path,
+    probe_image_size,
+    single_generate,
+)
+from seedream.run import (
+    RUN_KINDS,
+    append_index,
+    create_run,
+    format_size,
+    list_legacy_runs,
+    load_run,
+    read_index,
+    record_input,
+    resolve_run,
+    save_run,
+)
 from seedream.tags import ConvertResult, convert_prompt_tags
-from seedream.session import (
-    add_edit_session_output,
-    data_url_summary,
-    format_coords,
-    init_generate_session,
-    load_session,
-    save_session,
-    update_generate_session,
+
+app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Seedream 5.0 Pro 图像生成（自动保存完整生成过程，可复用/可复现）",
 )
-from seedream.webui import create_app, init_session_global
 
-app = typer.Typer(add_completion=False, no_args_is_help=True)
-
-# ── size 参数校验 ─────────────────────────────────────────────────────────────
+# ── 参数校验 ──────────────────────────────────────────────────────────────────
 
 _SIZE_PATTERN: re.Pattern[str] = re.compile(r"^(1K|1\.5K|2K|auto|\d+x\d+)$")
 _MIN_PIXELS: int = 921600   # 1280x720
 _MAX_PIXELS: int = 4624220  # 2048x2048x1.1025
 
 
-def _validate_size(size: str, *, layer_decomposition: bool = False) -> str:
+def _validate_size(size: str, *, allow_auto: bool = False, allow_custom: bool = True) -> str:
     """
-    校验 --size 参数合法性。
+    校验 --size 参数。
 
-    支持格式: "1K" / "1.5K" / "2K" / "宽x高"（如 "2048x1024"）；
-    "auto" 仅图层拆分场景可用。
-    自定义像素需满足总像素 [921600, 4624220] 且宽高比 [1/16, 16]。
-
-    :param size: 用户输入的 size 字符串
-    :param layer_decomposition: 是否开启图层拆分
-    :return: 校验通过的 size 字符串
-    :raises typer.Exit: 校验失败时退出
+    :param size: 用户输入，支持 ``1K`` / ``1.5K`` / ``2K`` / ``auto`` / ``宽x高``
+    :param allow_auto: 是否允许 ``auto``（仅图层拆分场景）
+    :param allow_custom: 是否允许自定义 ``宽x高``（图层拆分不支持）
+    :return: 校验通过的 size
+    :raises typer.Exit: 校验失败
     """
     if not _SIZE_PATTERN.match(size):
         typer.secho(
-            f"错误: 无效的分辨率格式 '{size}'，支持 1K / 1.5K / 2K / 宽x高（如 2048x1024）",
+            f"错误: 无效的分辨率 '{size}'，支持 1K / 1.5K / 2K"
+            + (" / auto / 宽x高（如 2048x1024）" if allow_custom else " / auto"),
             fg=typer.colors.RED, err=True,
         )
         raise typer.Exit(1)
 
     if size == "auto":
-        if not layer_decomposition:
+        if not allow_auto:
             typer.secho(
-                "错误: 分辨率 'auto' 仅图层拆分场景（--layer-decomposition）可用",
+                "错误: 分辨率 'auto' 只有图层拆分（seedream split）支持",
                 fg=typer.colors.RED, err=True,
             )
             raise typer.Exit(1)
@@ -81,14 +93,13 @@ def _validate_size(size: str, *, layer_decomposition: bool = False) -> str:
     if size in SIZE_TIERS:
         return size
 
-    if layer_decomposition:
+    if not allow_custom:
         typer.secho(
-            "错误: 图层拆分仅支持档位 1K / 1.5K / 2K / auto，不支持自定义宽x高",
+            "错误: 图层拆分只支持 1K / 1.5K / 2K / auto，不支持自定义宽x高",
             fg=typer.colors.RED, err=True,
         )
         raise typer.Exit(1)
 
-    # 自定义像素格式（正则已保证格式为 数字x数字，split 必然为 2 部分）
     w_str, h_str = size.split("x")
     w, h = int(w_str), int(h_str)
     total = w * h
@@ -110,77 +121,13 @@ def _validate_size(size: str, *, layer_decomposition: bool = False) -> str:
     return size
 
 
-def _validate_mode_inputs(
-    *,
-    layer_decomposition: bool,
-    background: str,
-    output_format: str,
-    image_refs: list[str],
-) -> None:
-    """
-    校验图层拆分 / 透明背景模式对输入图与输出格式的约束。
-
-    - 图层拆分：必须且仅能输入 1 张图片
-    - 透明背景：仅图生图、仅 1 张带透明通道的图，输出必须为 png
-
-    :raises typer.Exit: 校验失败时退出
-    """
-    count = len(image_refs)
-
-    if layer_decomposition and count != 1:
-        typer.secho(
-            f"错误: 图层拆分仅支持 1 张输入图（当前 {count} 张）",
-            fg=typer.colors.RED, err=True,
-        )
-        raise typer.Exit(1)
-
-    if background == "transparent":
-        if count != 1:
-            typer.secho(
-                f"错误: 透明背景仅支持图生图且只允许 1 张带透明通道的输入图（当前 {count} 张）",
-                fg=typer.colors.RED, err=True,
-            )
-            raise typer.Exit(1)
-        if output_format == "jpeg":
-            typer.secho(
-                "错误: 透明背景模式下输出必须为 png，--output-format jpeg 会触发 API 报错",
-                fg=typer.colors.RED, err=True,
-            )
-            raise typer.Exit(1)
-        for ref in image_refs:
-            if ref.startswith(("http://", "https://", "data:image/")):
-                continue
-            if os.path.splitext(ref)[1].lower() in ALPHA_LESS_FORMATS:
-                typer.secho(
-                    f"错误: 透明背景不支持无 alpha 通道的图片: {ref}（请改用 png / webp）",
-                    fg=typer.colors.RED, err=True,
-                )
-                raise typer.Exit(1)
-
-
-# ── generate 子命令 ──────────────────────────────────────────────────────────
-
-
-def _coords_to_pixels(coords: list[int], width: int, height: int) -> list[int]:
-    """把标注里存的 0~999 值换算成**原图像素**，供对外显示。
-
-    对外一律只暴露像素口径；这个换算只为了让 `session summary` 输出与其他命令一致。
-
-    :param coords: 0~999 坐标（2 个＝点选，4 个＝框选）
-    :param width: 所属图片宽
-    :param height: 所属图片高
-    :return: 原图像素坐标
-    """
-    dims = ([width, height] * ((len(coords) + 1) // 2))[:len(coords)]
-    return [max(0, min(d - 1, round(c / 1000 * d))) for c, d in zip(coords, dims)]
-
-
 def _apply_prompt_tags(conv: ConvertResult, task: dict) -> None:
-    """把 prompt 内坐标标签的校验结论落到任务上。
+    """
+    把 prompt 内坐标标签的校验结论落到任务上。
 
-    - 有 error：把问题逐条打出来并中止（不带着坏标签去请求接口）
+    - 有 error：逐条打印并中止（不带着坏标签去发请求）
     - 有 warning：提示但继续
-    - 换算成功：提示一句，并把换算后的 prompt 交给后续流程（原始 prompt 留在 prompt_raw 里备查）
+    - 换算成功：记下原始提示词，把换算后的提示词交给后续流程
 
     :param conv: :func:`convert_prompt_tags` 的结果
     :param task: 生成任务字典（原地修改 prompt / prompt_raw）
@@ -203,90 +150,51 @@ def _apply_prompt_tags(conv: ConvertResult, task: dict) -> None:
         task["prompt"] = conv.prompt
 
 
-def _generate_from_session(
-    session_path: str,
-    size: str,
-    output_format: str,
-    watermark: bool,
-    optimize: str,
-    timeout: int,
-    layer_decomposition: bool,
+# ── 生成主干（四个子命令共用）────────────────────────────────────────────────
+
+
+def _validate_inputs(
+    images: list[str],
+    *,
     background: str,
-) -> dict:
-    """从 session.json 执行图像生成。
-
-    :return: single_generate 的结果字典
+    layer_decomposition: bool,
+) -> None:
     """
-    if not os.path.exists(session_path):
-        typer.secho(f"错误: session 文件不存在: {session_path}", fg=typer.colors.RED, err=True)
+    在动手之前拦下「这个意图不成立」的输入组合（不发请求、不建任务目录）。
+
+    - 图层拆分：必须且只能 1 张输入图
+    - 透明背景：只能 1 张输入图，且必须带 alpha 通道（jpg/jpeg 天然没有）
+
+    :raises typer.Exit: 校验失败
+    """
+    if layer_decomposition and len(images) != 1:
+        typer.secho(
+            f"错误: 图层拆分只支持 1 张输入图（当前 {len(images)} 张）",
+            fg=typer.colors.RED, err=True,
+        )
         raise typer.Exit(1)
 
-    try:
-        with open(session_path, "r", encoding="utf-8") as f:
-            session_data = json.load(f)
-    except json.JSONDecodeError as e:
-        typer.secho(f"错误: session 文件解析失败: {e}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    if "prompt" not in session_data and not layer_decomposition:
-        typer.secho("错误: session 文件中缺少 prompt 字段", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-    data_urls = [
-        img["dataUrl"]
-        for img in session_data.get("images", [])
-        if img.get("dataUrl")
-    ]
-    resolved_images = list(data_urls)
-
-    _validate_mode_inputs(
-        layer_decomposition=layer_decomposition,
-        background=background,
-        output_format=output_format,
-        image_refs=resolved_images,
-    )
-
-    session_path_obj = Path(session_path).resolve()
-    session_dir = session_path_obj.parent
-    output_dir = str(session_dir / "output")
-
-    typer.echo("  Seedream 5.0 Pro 图像生成（session 模式）")
-    typer.echo(f"  Session 文件: {session_path}")
-    prompt_text = session_data.get("prompt", "")
-    typer.echo(f"  Prompt: {prompt_text[:80]}{'...' if len(prompt_text) > 80 else ''}")
-    if resolved_images:
-        typer.echo(f"  参考图: {len(resolved_images)} 张")
-    typer.echo(f"  输出目录: {output_dir}")
-    typer.echo("")
-
-    task: dict = {
-        "prompt": prompt_text,
-        "size": size,
-        "output_format": output_format,
-        "watermark": watermark,
-    }
-    task["optimize_prompt_options"] = {"mode": optimize}
-    # 校验 + 换算 session prompt 里的像素坐标标签（尺寸取自 session 记录的原图尺寸）
-    session_images = [img for img in session_data.get("images", []) if img.get("dataUrl")]
-    sizes = [
-        (img.get("naturalWidth"), img.get("naturalHeight"))
-        if img.get("naturalWidth") and img.get("naturalHeight") else None
-        for img in session_images
-    ]
-    _apply_prompt_tags(convert_prompt_tags(prompt_text, sizes), task)
-    if layer_decomposition:
-        task["layer_decomposition"] = True
-    if background != "opaque":
-        task["background"] = background
-    if resolved_images:
-        task["image"] = resolved_images if len(resolved_images) > 1 else resolved_images[0]
-
-    result = single_generate(task, timeout=timeout, output_dir=output_dir)
-    add_edit_session_output(session_path, result)
-    return result
+    if background == "transparent":
+        if len(images) != 1:
+            typer.secho(
+                f"错误: 透明背景只支持 1 张输入图（当前 {len(images)} 张）",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(1)
+        for ref in images:
+            if ref.startswith(("http://", "https://")):
+                continue
+            if Path(ref).suffix.lower() in ALPHA_LESS_FORMATS:
+                typer.secho(
+                    f"错误: 透明背景需要带 alpha 通道的输入图，{Path(ref).name} 没有（请改用 png / webp）",
+                    fg=typer.colors.RED, err=True,
+                )
+                raise typer.Exit(1)
 
 
-def _generate_from_prompt(
+def _execute(
+    *,
+    kind: str,
     prompt: str | None,
     images: list[str] | None,
     size: str,
@@ -294,188 +202,353 @@ def _generate_from_prompt(
     watermark: bool,
     optimize: str,
     timeout: int,
-    layer_decomposition: bool,
-    background: str,
-) -> tuple[dict, str]:
-    """从 prompt 执行图像生成。
-
-    :return: (result, output_dir) 元组
+    layer_decomposition: bool = False,
+    background: str = "opaque",
+    converted_already: bool = False,
+    replayed_from: str | None = None,
+) -> dict:
     """
-    task: dict = {
-        "prompt": prompt or "",
-        "size": size,
-        "output_format": output_format,
-        "watermark": watermark,
-    }
-    task["optimize_prompt_options"] = {"mode": optimize}
-    if layer_decomposition:
-        task["layer_decomposition"] = True
-    if background != "opaque":
-        task["background"] = background
+    所有生成子命令的执行主干：建任务记录 → 落参考图 → 发请求 → 归档。
 
-    if images:
-        if len(images) > MAX_REF_IMAGES:
-            typer.secho(f"错误: 最多支持 {MAX_REF_IMAGES} 张参考图", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-
-        resolved = []
-        for path in images:
-            try:
-                resolved.append(_resolve_image_path(path))
-            except (FileNotFoundError, ValueError) as e:
-                typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
-                raise typer.Exit(1)
-
-        _validate_mode_inputs(
-            layer_decomposition=layer_decomposition,
-            background=background,
-            output_format=output_format,
-            image_refs=images,
-        )
-
-        task["image"] = resolved if len(resolved) > 1 else resolved[0]
-        # 校验 + 换算 prompt 里的像素坐标标签（URL 类参考图读不到尺寸，换算会明确报错）
-        sizes = [
-            None if p.startswith(("http://", "https://", "data:image/")) else probe_image_size(p)
-            for p in images
-        ]
-        if len(sizes) == 1 and sizes[0]:
-            task["input_size"] = list(sizes[0])   # 供图层拆分把底图坐标换算回原图像素
-        _apply_prompt_tags(convert_prompt_tags(prompt or "", sizes), task)
-    else:
-        _validate_mode_inputs(
-            layer_decomposition=layer_decomposition,
-            background=background,
-            output_format=output_format,
-            image_refs=[],
-        )
-
-    session_data, session_path = init_generate_session(task)
-    gen_session_id = session_data["session_id"]
-    output_dir = str(Path(DEFAULT_OUTPUT_DIR) / "generate" / gen_session_id / "output")
-
-    typer.echo("  Seedream 5.0 Pro 图像生成")
-    typer.echo(f"  会话 ID: {gen_session_id}")
-    typer.echo(f"  Session 文件: {session_path}")
-    if prompt:
-        typer.echo(f"  Prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
-    typer.echo(f"  Size: {size}")
-    typer.echo(f"  输出目录: {output_dir}")
-    typer.echo(f"  格式: {output_format}")
-    if images:
-        typer.echo(f"  参考图: {len(images)} 张")
-    if watermark:
-        typer.echo("  水印: 开启")
-    if layer_decomposition:
-        typer.echo("  模式: 图层拆分")
-    if background != "opaque":
-        typer.echo("  背景: 透明通道")
-    typer.echo(f"  优化模式: {optimize}")
-    typer.echo("")
-
-    update_generate_session(session_path, "running", {"error": None})
-    result = single_generate(task, timeout=timeout, output_dir=output_dir)
-
-    if result["status"] == "success":
-        update_generate_session(session_path, "success", result)
-    else:
-        update_generate_session(session_path, "error", result)
-
-    return result, output_dir
-
-
-def _print_result(result: dict) -> None:
-    """输出生成结果到终端。"""
-    if result["status"] == "success":
-        typer.secho("  生成成功!", fg=typer.colors.GREEN)
-        size_kb = os.path.getsize(result["image_path"]) / 1024 if os.path.exists(result["image_path"]) else 0
-        if result.get("layers"):
-            base = result["layers"][0]
-            typer.echo(f"  底图: {base['path']}")
-            layers = result["layers"][1:]
-            typer.echo(f"  图层: {len(layers)} 个")
-            for rec in layers:
-                px = rec.get("bbox_pixel")
-                box_str = f" bbox(原图像素)={px}" if px else ""
-                typer.echo(f"    - L{rec['z_index']} {rec.get('name') or ''}{box_str}")
-                if rec.get("prompt_fragment"):
-                    typer.echo(f"        可直接粘进 prompt: {rec['prompt_fragment']}")
-                if rec.get("bbox_note"):
-                    typer.echo(f"        注意: {rec['bbox_note']}")
-            if any(rec.get("prompt_fragment") for rec in layers):
-                typer.echo("")
-                typer.echo("  上面的标签是**原图像素**，直接粘进 prompt 即可；")
-                typer.echo("  seedream generate 会校验坐标标签并自动转成接口需要的格式（无需自己算）：")
-                typer.echo('    seedream generate --images <原图> -p "把图1<bbox>…</bbox>区域改为…，其他部分不变"')
-        else:
-            typer.echo(f"  图片: {result['image_path']} ({size_kb:.0f} KB)")
-        typer.echo(f"  元数据: {result['metadata_path']}")
-        if len(result.get("all_images", [])) > 1 and not result.get("layers"):
-            typer.echo(f"  共 {len(result['all_images'])} 张图片")
-    else:
-        typer.secho(f"  生成失败: {result['error']}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(1)
-
-
-@app.command()
-def generate(
-    prompt: Annotated[str | None, typer.Option("--prompt", "-p", help="提示词 / 编辑指令（与 --session 互斥）")] = None,
-    session: Annotated[str | None, typer.Option("--session", "-S", help="从 session.json 文件读取 prompt 和图片路径（与 --prompt 互斥）")] = None,
-    images: Annotated[list[str] | None, typer.Option("--images", help="参考图（URL 或本地路径，可多次指定，最多 10 张）")] = None,
-    size: Annotated[str, typer.Option("--size", "-s", help="分辨率: 1K / 1.5K / 2K / 宽x高（图层拆分另支持 auto，默认 2K）")] = "2K",
-    output_format: Annotated[Literal["png", "jpeg"], typer.Option("--output-format", help="输出格式（图层拆分只作用于底图，图层恒为 png）")] = "png",
-    watermark: Annotated[bool, typer.Option("--watermark", help="启用水印（默认关闭）")] = False,
-    optimize: Annotated[Literal["standard", "fast"], typer.Option("--optimize", help="提示词优化模式（默认 standard）")] = "standard",
-    layer_decomposition: Annotated[bool, typer.Option("--layer-decomposition", help="图层拆分：把单张图拆成 1 底图 + 最多 16 个透明图层（仅支持 1 张输入图）")] = False,
-    background: Annotated[Literal["opaque", "transparent"], typer.Option("--background", help="背景模式（transparent 仅图生图且输入需带透明通道，输出恒为 png）")] = "opaque",
-    timeout: Annotated[int, typer.Option("--timeout", "-t", help="API 超时秒数（默认 300）")] = 300,
-) -> None:
-    """
-    Seedream 5.0 Pro 图像生成 - 文生图 / 图生图 / 交互编辑 / 图层拆分，自动保存到本地。
-
-    参考图通过 --images 多次指定，例如：
-
-      seedream generate -p "..." --images url1 --images url2
-
-    图层拆分示例（prompt 可省略，模型自动识别主要元素）：
-
-      seedream generate --layer-decomposition --images ./poster.png --size 2K
-
-    输出目录结构:
-      .seedream/generate/<session_id>/output/   (普通模式)
-      .seedream/edit/<session_id>/output/        (session 模式)
+    :param kind: 意图（``draw``/``edit``/``split``/``cutout``），即子命令名
+    :param prompt: 提示词；图层拆分场景可省略（为空时不发送该字段）
+    :param images: 参考图（本地路径或 http(s) URL）
+    :param size: 分辨率档位或自定义宽x高
+    :param output_format: ``png`` / ``jpeg``
+    :param watermark: 是否加水印
+    :param optimize: 提示词优化模式 ``standard`` / ``fast``
+    :param timeout: API 超时秒数
+    :param layer_decomposition: 图层拆分开关
+    :param background: ``opaque`` / ``transparent``
+    :param converted_already: prompt 是否已是「换算后」的成品（replay 场景不再二次换算）
+    :param replayed_from: 复现来源的 run id
+    :return: 生成结果字典（含 run_id / run_dir / outputs）
+    :raises typer.Exit: 参考图缺失或不可读
     """
     if not API_KEY:
         typer.secho("错误: 请设置 ARK_API_KEY 环境变量", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
-    if prompt and session:
-        typer.secho("错误: --prompt 和 --session 不能同时使用", fg=typer.colors.RED, err=True)
+    images = images or []
+    if len(images) > MAX_REF_IMAGES:
+        typer.secho(f"错误: 最多支持 {MAX_REF_IMAGES} 张参考图", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
+    _validate_inputs(images, background=background, layer_decomposition=layer_decomposition)
 
-    if not prompt and not session:
-        # 图层拆分场景下 prompt 可选：不传时模型自动识别主要元素
-        if not (layer_decomposition and images):
-            typer.secho(
-                "错误: 请提供 --prompt 或 --session（图层拆分场景可只提供 --images）",
-                fg=typer.colors.RED, err=True,
-            )
+    # ① 参考图校验与解析 —— 放在建目录之前：坏输入（超限/格式不支持）不该留下任务目录
+    resolved: list[str] = []
+    sizes: list[tuple[int, int] | None] = []
+    for ref in images:
+        try:
+            resolved.append(_resolve_image_path(ref))
+        except (FileNotFoundError, ValueError) as e:
+            typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+        sizes.append(None if ref.startswith(("http://", "https://")) else probe_image_size(ref))
+
+    # ② 组装请求
+    task: dict = {
+        "prompt": prompt or "",
+        "size": size,
+        "output_format": output_format,
+        "watermark": watermark,
+        "optimize_prompt_options": {"mode": optimize},
+    }
+    if layer_decomposition:
+        task["layer_decomposition"] = True
+    if background != "opaque":
+        task["background"] = background
+    if resolved:
+        task["image"] = resolved if len(resolved) > 1 else resolved[0]
+
+    # ③ 坐标标签校验 + 换算（replay 场景的 prompt 已是成品，跳过）
+    if not converted_already:
+        _apply_prompt_tags(convert_prompt_tags(task["prompt"], sizes), task)
+    if len(sizes) == 1 and sizes[0]:
+        # 供图层拆分把底图坐标换算回原图像素
+        task["input_size"] = list(sizes[0])
+
+    # ④ 建任务目录，并把参考图落盘记录 —— 此后即使生成失败，输入也已被保存、依旧可复用
+    run_id, run_directory = create_run()
+    created_at = _now()
+    inputs: list[dict] = []
+    for ref in images:
+        try:
+            inputs.append(record_input(run_directory, ref))
+        except FileNotFoundError as e:
+            typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1)
 
-    # 校验 size 参数
-    validated_size = _validate_size(size, layer_decomposition=layer_decomposition)
+    params = {
+        "size": size,
+        "output_format": output_format,
+        "watermark": watermark,
+        "optimize": optimize,
+        "layer_decomposition": layer_decomposition,
+        "background": background,
+    }
+    data: dict = {
+        "run_id": run_id,
+        "kind": kind,
+        "created_at": created_at,
+        "finished_at": None,
+        "status": "running",
+        "error": None,
+        "prompt": task.get("prompt", ""),
+        "prompt_raw": task.get("prompt_raw"),
+        "params": params,
+        "inputs": inputs,
+        "outputs": [],
+    }
+    if replayed_from:
+        data["replayed_from"] = replayed_from
+    save_run(run_directory, data)
 
-    if session:
-        result = _generate_from_session(
-            session, validated_size, output_format, watermark, optimize, timeout,
-            layer_decomposition, background,
-        )
+    _print_header(kind, run_id, run_directory, task, inputs, params)
+
+    # ④ 发请求
+    outputs_dir = str(run_directory / "outputs")
+    result = single_generate(task, outputs_dir, timeout=timeout)
+
+    # ⑤ 归档
+    data["finished_at"] = _now()
+    data["status"] = result.get("status", "error")
+    data["error"] = result.get("error")
+    records = result.get("records") or []
+    data["outputs"] = [
+        {
+            "index": i + 1,
+            "path": rec.get("path"),
+            "size": rec.get("size"),
+            "output_format": rec.get("output_format"),
+            "z_index": rec.get("z_index"),
+            "name": rec.get("name"),
+            "description": rec.get("description"),
+            "bbox_pixel": rec.get("bbox_pixel"),
+            "prompt_fragment": rec.get("prompt_fragment"),
+            "bbox_note": rec.get("bbox_note"),
+        }
+        for i, rec in enumerate(records)
+    ]
+    save_run(run_directory, data)
+    append_index(data)
+
+    result["run_id"] = run_id
+    result["run_dir"] = str(run_directory)
+    result["data"] = data
+    return result
+
+
+def _now() -> str:
+    """当前 ISO 时间戳。"""
+    from datetime import datetime
+
+    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _print_header(
+    kind: str,
+    run_id: str,
+    run_directory: Path,
+    task: dict,
+    inputs: list[dict],
+    params: dict,
+) -> None:
+    """打印任务头（所有生成子命令输出一致，便于 agent 稳定解析）。"""
+    typer.echo(f"  Seedream 5.0 Pro · {kind}")
+    typer.echo(f"  任务: {run_id}")
+    typer.echo(f"  目录: {run_directory}")
+    if task.get("prompt"):
+        prompt = task["prompt"]
+        typer.echo(f"  提示词: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
+    typer.echo(f"  参数: size={params['size']} format={params['output_format']}"
+               + (" 图层拆分=开" if params["layer_decomposition"] else "")
+               + (" 背景=透明" if params["background"] == "transparent" else ""))
+    if inputs:
+        typer.echo(f"  参考图: {len(inputs)} 张")
+    typer.echo("")
+
+
+def _print_result(result: dict) -> None:
+    """打印生成结果，并在失败时以非零码退出。"""
+    data = result.get("data", {})
+    if result.get("status") != "success":
+        typer.secho(f"  生成失败: {result.get('error')}", fg=typer.colors.RED, err=True)
+        typer.secho(f"  记录已保存（输入可复用）: {result.get('run_dir')}", fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(1)
+
+    outputs = data.get("outputs", [])
+    layers = [o for o in outputs if o.get("z_index") is not None]
+    if layers:
+        base = next((o for o in layers if o["z_index"] == 0), layers[0])
+        typer.secho("  生成成功!", fg=typer.colors.GREEN)
+        typer.echo(f"  底图: {base['path']}")
+        rest = [o for o in layers if o["z_index"] != 0]
+        typer.echo(f"  图层: {len(rest)} 个")
+        for rec in rest:
+            px = rec.get("bbox_pixel")
+            box_str = f" bbox(原图像素)={' '.join(str(v) for v in px)}" if px else ""
+            typer.echo(f"    - L{rec['z_index']} {rec.get('name') or ''}{box_str}")
+            if rec.get("prompt_fragment"):
+                typer.echo(f"        可直接粘进 prompt: {rec['prompt_fragment']}")
+            if rec.get("bbox_note"):
+                typer.echo(f"        注意: {rec['bbox_note']}")
+        typer.echo("")
+        typer.echo("  上面的标签是**原图像素**，直接粘进 prompt 即可（seedream edit 会自动换算）：")
+        typer.echo('    seedream edit "把图1<bbox>…</bbox>区域改为…，其他部分不变" --images <原图>')
     else:
-        result, _ = _generate_from_prompt(
-            prompt, images, validated_size, output_format, watermark, optimize, timeout,
-            layer_decomposition, background,
-        )
+        typer.secho("  生成成功!", fg=typer.colors.GREEN)
+        for rec in outputs:
+            size = f" ({format_size(os.path.getsize(rec['path']))})" if rec.get("path") and os.path.exists(rec["path"]) else ""
+            typer.echo(f"  图片: {rec['path']}{size}")
 
+    typer.echo(f"  记录: {os.path.join(result['run_dir'], 'run.json')}")
+    typer.echo("")
+    typer.echo(f"  复用: seedream show {result['run_id']}  ·  复现: seedream replay {result['run_id']}")
+
+
+# ── 生成子命令 ────────────────────────────────────────────────────────────────
+
+_SizeOpt = Annotated[str, typer.Option("--size", "-s", help="分辨率: 1K / 1.5K / 2K / 宽x高")]
+_FormatOpt = Annotated[Literal["png", "jpeg"], typer.Option("--format", help="输出格式")]
+_WatermarkOpt = Annotated[bool, typer.Option("--watermark", help="启用水印（默认关闭）")]
+_OptimizeOpt = Annotated[Literal["standard", "fast"], typer.Option("--optimize", help="提示词优化模式")]
+_TimeoutOpt = Annotated[int, typer.Option("--timeout", "-t", help="API 超时秒数")]
+
+
+@app.command()
+def draw(
+    prompt: Annotated[str, typer.Argument(help="提示词（用连贯自然语言描述画面）")],
+    size: _SizeOpt = "2K",
+    output_format: _FormatOpt = "png",
+    watermark: _WatermarkOpt = False,
+    optimize: _OptimizeOpt = "standard",
+    timeout: _TimeoutOpt = 300,
+) -> None:
+    """
+    文生图 —— 只给提示词，从零生成一张图。
+
+    示例：
+
+      seedream draw "一只戴贝雷帽的橘猫坐在窗台上，午后逆光，胶片质感"
+    """
+    result = _execute(
+        kind="draw",
+        prompt=prompt,
+        images=None,
+        size=_validate_size(size),
+        output_format=output_format,
+        watermark=watermark,
+        optimize=optimize,
+        timeout=timeout,
+    )
+    _print_result(result)
+
+
+@app.command()
+def edit(
+    prompt: Annotated[str, typer.Argument(help="编辑指令（用「图1/图2」指代参考图；可内嵌 <bbox>…</bbox> 像素坐标标签）")],
+    images: Annotated[list[str], typer.Option("--images", help="参考图（本地路径或 URL，可多次指定，最多 10 张）")],
+    size: _SizeOpt = "2K",
+    output_format: _FormatOpt = "png",
+    watermark: _WatermarkOpt = False,
+    optimize: _OptimizeOpt = "standard",
+    timeout: _TimeoutOpt = 300,
+) -> None:
+    """
+    图生图 / 交互编辑 —— 给一张或多张参考图加编辑指令。
+
+    局部改动建议先用 ``seedream mark`` 读出像素坐标，再把标签粘进指令。
+    显式声明要保持不变的部分，效果更稳。
+
+    示例：
+
+      seedream edit "把图1的水杯换成白瓷马克杯，保持手部姿势与画面其他部分不变" --images photo.png
+
+      seedream edit "把图1<bbox>820 520 1180 860</bbox>区域换成白瓷马克杯" --images photo.png
+
+      seedream edit "将图1的人物放到图2的庭院场景中，光影自然融合" --images a.png --images b.png
+    """
+    result = _execute(
+        kind="edit",
+        prompt=prompt,
+        images=list(images),
+        size=_validate_size(size),
+        output_format=output_format,
+        watermark=watermark,
+        optimize=optimize,
+        timeout=timeout,
+    )
+    _print_result(result)
+
+
+@app.command()
+def split(
+    image: Annotated[str, typer.Argument(help="要拆分的图片（限 1 张）")],
+    prompt: Annotated[str | None, typer.Option("--prompt", "-p", help="可选：指定拆分意图，不传则自动识别主要元素")] = None,
+    size: _SizeOpt = "auto",
+    output_format: _FormatOpt = "png",
+    watermark: _WatermarkOpt = False,
+    optimize: _OptimizeOpt = "standard",
+    timeout: _TimeoutOpt = 300,
+) -> None:
+    """
+    图层拆分 —— 把一张图拆成 1 张底图 + 最多 16 个透明图层。
+
+    每个图层带名称、描述和 bounding_box；命令会顺便给出**原图像素**的
+    ``<bbox>`` 标签，可粘进 ``seedream edit`` 精修某个图层。
+
+    每次请求预扣 17 IPM，比普通生成贵。
+
+    示例：
+
+      seedream split poster.png
+
+      seedream split poster.png --size 2K -p "只拆分前景物体与文字"
+    """
+    result = _execute(
+        kind="split",
+        prompt=prompt,
+        images=[image],
+        size=_validate_size(size, allow_auto=True, allow_custom=False),
+        output_format=output_format,
+        watermark=watermark,
+        optimize=optimize,
+        timeout=timeout,
+        layer_decomposition=True,
+    )
+    _print_result(result)
+
+
+@app.command()
+def cutout(
+    image: Annotated[str, typer.Argument(help="要抠出主体的图片（限 1 张，需含透明通道，如 png）")],
+    prompt: Annotated[str, typer.Option("--prompt", "-p", help="可选：提取要求")] = "保留主体，清理边缘，输出干净的透明背景素材图，柔和侧光",
+    size: _SizeOpt = "2K",
+    watermark: _WatermarkOpt = False,
+    optimize: _OptimizeOpt = "standard",
+    timeout: _TimeoutOpt = 300,
+) -> None:
+    """
+    透明背景素材 —— 从图片中抠出主体，输出带 alpha 通道的 PNG。
+
+    输入必须是带透明通道的格式（png / webp）；jpg 没有 alpha 通道，会被本地拦下。
+
+    示例：
+
+      seedream cutout product.png
+    """
+    result = _execute(
+        kind="cutout",
+        prompt=prompt,
+        images=[image],
+        size=_validate_size(size),
+        output_format="png",  # 透明背景必须是 png，不给选项以免误用
+        watermark=watermark,
+        optimize=optimize,
+        timeout=timeout,
+        background="transparent",
+    )
     _print_result(result)
 
 
@@ -483,9 +556,8 @@ def generate(
 
 
 def _parse_coords(raw: str, count: int, kind: str) -> tuple[list[int], str]:
-    """解析坐标参数，支持内联标签。
-
-    形如 ``200,180`` 或 ``200,180:手部``（标签用半角/全角冒号分隔）。
+    """
+    解析坐标参数，支持内联标签（``200,180`` 或 ``200,180:手部``）。
 
     :return: (坐标列表, 标签) 元组
     """
@@ -506,43 +578,42 @@ def _parse_coords(raw: str, count: int, kind: str) -> tuple[list[int], str]:
 
 @app.command()
 def mark(
-    image: Annotated[str, typer.Option("--image", "-i", help="原图路径（URL 不支持，先下载到本地）")],
-    point: Annotated[list[str] | None, typer.Option("--point", help="点选坐标 x,y（像素，可多次指定；可写 x,y:标签）")] = None,
-    box: Annotated[list[str] | None, typer.Option("--box", help="框选坐标 x1,y1,x2,y2（像素，可多次指定；可写 x1,y1,x2,y2:标签）")] = None,
+    image: Annotated[str, typer.Argument(help="原图路径（不支持 URL，先下载到本地）")],
+    point: Annotated[list[str] | None, typer.Option("--point", help="点选坐标 x,y（像素，可多次；可写 x,y:标签）")] = None,
+    box: Annotated[list[str] | None, typer.Option("--box", help="框选坐标 x1,y1,x2,y2（像素，可多次；可写 x1,y1,x2,y2:标签）")] = None,
     grid: Annotated[bool, typer.Option("--grid/--no-grid", help="预览图是否叠加坐标网格（默认开启）")] = True,
-    plain: Annotated[bool, typer.Option("--plain", help="提交模式：输出原图尺寸的纯标记图，可直接当 --images 传给模型")] = False,
-    output: Annotated[str | None, typer.Option("--out", "-o", help="输出路径（默认 .seedream/mark/<id>.jpg；后缀决定格式，.png 为无损）")] = None,
-    max_edge: Annotated[int | None, typer.Option("--max-edge", help="输出最长边上限（默认自动：按原始尺寸渲染，产物达 2MB 预览上限时自动降档；0=强制原始尺寸且不降档）")] = None,
+    plain: Annotated[bool, typer.Option("--plain", help="提交模式：输出原图尺寸的纯标记图，可直接当参考图传给模型")] = False,
+    output: Annotated[str | None, typer.Option("--out", "-o", help="输出路径（默认 <数据根>/mark/<id>.jpg；后缀决定格式，.png 无损）")] = None,
+    max_edge: Annotated[int | None, typer.Option("--max-edge", help="输出最长边上限（默认自动，达 2MB 预览上限时自动降档；0=强制原始尺寸且不降档）")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="以 JSON 输出结果，便于程序化处理")] = False,
 ) -> None:
     """
-    在图片上画标记并输出坐标标签，供 agent 交互式编辑前核对位置。
+    在图片上画标记并输出坐标标签，供编辑前核对位置。
 
     坐标一律用**图片像素**（用 --grid 网格读数即可）；标签可直接粘进 prompt，
-    其余由 seedream generate 自动处理。
+    其余由 seedream edit 自动处理。
 
     典型用法：
 
       # 1) 先看网格，读出要编辑区域的像素坐标
-      seedream mark --image photo.png
+      seedream mark photo.png
 
-      # 2) 画框确认位置对不对（给有视觉的模型自己看；标签用冒号内联）
-      seedream mark --image photo.png --box 820,520,1180,860:手部
+      # 2) 画框确认位置对不对（标签用冒号内联）
+      seedream mark photo.png --box 820,520,1180,860:手部
 
-      # 3) 需要把标记图本身作为模型输入时（对应官方“任意标记”形式）
-      seedream mark --image photo.png --box 820,520,1180,860 --plain -o marked.png
+      # 3) 需要把标记图本身作为模型输入时（对应官方"任意标记"形式）
+      seedream mark photo.png --box 820,520,1180,860 --plain -o marked.png
 
     分辨率默认自动：按原始尺寸出图，只有在产物达到 2MB 预览上限时才自动降档，
     因此不需要自己算缩放比。要强制原始尺寸（哪怕文件更大）加 --max-edge 0。
 
-    坐标默认按像素解析（`--point x,y` / `--box x1,y1,x2,y2`），可用冒号跟一个可读标签
-    （`--box 120,180,640,760:手部`）。标记编号顺序为「点选在前、框选在后」。
+    标记编号顺序为「点选在前、框选在后」。
     """
     try:
         from seedream.mark import build_marks, render_preview
     except ImportError as e:  # Pillow 缺失
         typer.secho(
-            f"错误: 缺少依赖 Pillow（pip install pillow / uv tool install --force .）: {e}",
+            f"错误: 缺少依赖 Pillow（pip install pillow）: {e}",
             fg=typer.colors.RED, err=True,
         )
         raise typer.Exit(1)
@@ -561,7 +632,6 @@ def mark(
         )
         raise typer.Exit(1)
 
-    # 先探测图片尺寸，用于校验像素坐标是否越界
     try:
         from PIL import Image
 
@@ -592,7 +662,7 @@ def mark(
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
-    mode = "提交模式（无网格/无文字，可直接作为 --images）" if plain else "预览模式（给模型核对坐标用）"
+    mode = "提交模式（无网格/无文字，可直接作为参考图）" if plain else "预览模式（核对坐标用）"
     typer.secho("  标记图已生成", fg=typer.colors.GREEN)
     typer.echo(f"  模式: {mode}")
     typer.echo(f"  图片: {result['preview_path']}")
@@ -606,7 +676,6 @@ def mark(
     for item in result["marks"]:
         pixel = " ".join(str(v) for v in item["pixel"])
         kind = "点选" if item["kind"] == "point" else "框选"
-        # 只显示像素口径，避免同一份数据出现两种写法
         typer.echo(f"  #{item['index']} {kind} [{item['color']}] 像素({pixel})"
                    + (f" {item['label']}" if item["label"] else ""))
     if result["fragments"]:
@@ -615,130 +684,198 @@ def mark(
         typer.echo(f"    {' '.join(result['fragments'])}")
 
 
-# ── session 子命令组 ────────────────────────────────────────────────────────
-
-session_app = typer.Typer(add_completion=False, help="Session 读写工具")
-app.add_typer(session_app, name="session")
+# ── 任务记录子命令 ────────────────────────────────────────────────────────────
 
 
-@session_app.command()
-def summary(
-    session_path: Annotated[str, typer.Argument(help="session.json 文件路径")],
+@app.command(name="ls")
+def list_runs(
+    limit: Annotated[int, typer.Option("--limit", "-n", help="最多显示条数")] = 20,
+    all_runs: Annotated[bool, typer.Option("--all", help="同时列出 v2 遗留目录（只读，不迁移）")] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="以 JSON 输出")] = False,
 ) -> None:
     """
-    输出 session 结构化摘要。
+    列出历史生成任务（最新在前）。
 
-    包含 session_id、状态机状态、图片列表及尺寸、标注列表、prompt（截断 80 字符）。
+    每条记录都包含提示词、参考图与产物 —— 想复用某张图时先在这里找。
+
+    示例：
+
+      seedream ls                 # 最近 20 条
+      seedream ls -n 5 --json     # 程序化取最近 5 条
     """
-    data = load_session(session_path)
+    entries = read_index(limit=limit)
+    legacy = list_legacy_runs() if all_runs else []
 
-    session_id = data.get("session_id", "")
-    typer.echo(f"Session: {session_id[:6]}")
-
-    sm = data.get("state_machine", {})
-    current_state = sm.get("current_state", "unknown")
-    typer.echo(f"State: {current_state}")
-
-    images = data.get("images", [])
-    typer.echo(f"Images: {len(images)} 张")
-    for img in images:
-        label = img.get("inputLabel", "?")
-        name = img.get("name", "?")
-        w = img.get("naturalWidth", "?")
-        h = img.get("naturalHeight", "?")
-        b64_info = data_url_summary(img.get("dataUrl", ""))
-        typer.echo(f"  - {label}: {name} ({w}x{h}) {b64_info}")
-
-    annotations = data.get("annotations", [])
-    typer.echo(f"Annotations: {len(annotations)} 个")
-    for ann in annotations:
-        ann_id = ann.get("id", "?")
-        ann_type = ann.get("type", "?")
-        img_label = ann.get("image_label", "?")
-        coords = ann.get("normalized_coords", [])
-        owner = next((i for i in images if i.get("inputLabel") == img_label), None)
-        if coords and owner and owner.get("naturalWidth") and owner.get("naturalHeight"):
-            coords = _coords_to_pixels(coords, owner["naturalWidth"], owner["naturalHeight"])
-        coords_str = format_coords(coords)
-        typer.echo(f"  - #{ann_id} {ann_type} {img_label}(像素): {coords_str}")
-
-    prompt = data.get("prompt", "")
-    typer.echo(f"Prompt: {prompt}")
-
-    user_intent = data.get("user_intent", "")
-    if user_intent:
-        typer.echo(f"User Intent: {user_intent}")
-
-
-@session_app.command(name="set-prompt")
-def set_prompt(
-    session_path: Annotated[str, typer.Argument(help="session.json 文件路径")],
-    prompt: Annotated[str, typer.Option("--prompt", "-p", help="新的 prompt 内容")],
-) -> None:
-    """更新 session.json 中的 prompt 字段并写回文件。"""
-    data = load_session(session_path)
-    data["prompt"] = prompt
-    save_session(session_path, data)
-
-
-@session_app.command(name="list-images")
-def list_images(
-    session_path: Annotated[str, typer.Argument(help="session.json 文件路径")],
-) -> None:
-    """
-    列出所有图片的信息（名称、尺寸、dataUrl 摘要）。
-
-    图片以 base64 格式嵌入 session.json 中，不再有独立文件路径。
-    """
-    data = load_session(session_path)
-    images = data.get("images", [])
-    if not images:
-        typer.echo("（无图片）")
+    if as_json:
+        typer.echo(json.dumps({"runs": entries, "legacy": legacy}, ensure_ascii=False, indent=2))
         return
-    for img in images:
-        label = img.get("inputLabel", "?")
-        name = img.get("name", "?")
-        w = img.get("naturalWidth", "?")
-        h = img.get("naturalHeight", "?")
-        b64_info = data_url_summary(img.get("dataUrl", ""))
-        typer.echo(f"{label}: {name} ({w}x{h}) {b64_info}")
 
+    if not entries and not legacy:
+        typer.echo(f"（还没有任何生成任务）数据根目录: {resolve_home()}")
+        return
 
-# ── webui 子命令 ─────────────────────────────────────────────────────────────
+    typer.echo(f"数据根目录: {resolve_home()}")
+    typer.echo("")
+    for entry in entries:
+        prompt = (entry.get("prompt") or "").replace("\n", " ")[:40]
+        typer.echo(
+            f"  {entry['run_id']}  {entry['kind']:<6} {entry.get('status', '?'):<7}"
+            f" 输入{entry.get('inputs', 0)} 输出{entry.get('outputs', 0)}"
+            f"  {prompt}"
+        )
+    if legacy:
+        typer.echo("")
+        typer.secho(f"  v2 遗留目录 {len(legacy)} 个（只读列出，不被新命令使用）:", fg=typer.colors.YELLOW)
+        for entry in legacy[:limit]:
+            typer.echo(f"    {entry['run_id']}  {entry['kind']}  {entry.get('status', '?')}")
 
 
 @app.command()
-def webui(
-    port: Annotated[int, typer.Option("--port", "-p", help="端口号（默认 8000）")] = 8000,
-    host: Annotated[str, typer.Option("--host", help="绑定的主机地址（默认 127.0.0.1；设为 0.0.0.0 可远程访问）")] = "127.0.0.1",
-    preload: Annotated[list[str] | None, typer.Option("--preload", help="预加载图片路径（可多次指定）")] = None,
+def show(
+    ref: Annotated[str, typer.Argument(help="任务 id 或 'last'（默认最近一次）")] = "last",
+    as_json: Annotated[bool, typer.Option("--json", help="以 JSON 输出完整记录")] = False,
 ) -> None:
     """
-    Seedream 5.0 Pro 交互编辑 WebUI - 图片上传、点选/框选标注、编辑意图保存
+    查看一次生成任务的完整记录：提示词、参数、参考图、产物。
 
-    默认仅监听本机回环地址（127.0.0.1）以保证安全。如需从局域网访问，
-    显式传入 --host 0.0.0.0。
+    示例：
+
+      seedream show              # 最近一次
+      seedream show last
+      seedream show 20261008-143022-a1b2
+      seedream show --json       # 交给程序处理
     """
-    preload_paths = preload or []
+    try:
+        run_id, directory = resolve_run(ref)
+    except FileNotFoundError as e:
+        typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
 
-    # 确保输出目录存在
-    Path(DEFAULT_OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+    try:
+        data = load_run(directory)
+    except (OSError, json.JSONDecodeError) as e:
+        typer.secho(f"错误: 无法读取记录 {directory}: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
 
-    typer.echo("  Seedream 5.0 Pro 交互编辑 WebUI")
-    typer.echo("  ─────────────────────────────────────")
-    session_info = init_session_global(preload_paths)
-    session_id = session_info.get("id", "")
-    typer.echo(f"  会话 ID: {session_id}")
-    typer.echo(f"  Session 文件: {session_info.get('path', '')}")
-    if preload_paths:
-        typer.echo(f"  预加载图片: {len(preload_paths)} 张")
-    typer.echo("  ─────────────────────────────────────")
+    if as_json:
+        typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
+        return
 
-    web_app = create_app()
-    typer.echo(f"  服务地址: http://{host}:{port}")
-    if host in ("0.0.0.0", "::"):
-        typer.echo(f"  远程访问: http://<your-ip>:{port}")
-    typer.echo("  按 Ctrl+C 停止服务")
+    typer.echo(f"任务: {data.get('run_id', run_id)} ({data.get('kind', '?')})")
+    typer.echo(f"状态: {data.get('status', '?')}    时间: {data.get('created_at', '?')}")
+    if data.get("replayed_from"):
+        typer.echo(f"复现自: {data['replayed_from']}")
+    typer.echo(f"提示词: {data.get('prompt') or '(空)'}")
+    if data.get("prompt_raw"):
+        typer.echo(f"原始提示词(像素标签): {data['prompt_raw']}")
+    params = data.get("params", {})
+    typer.echo("参数: " + "  ".join(f"{k}={v}" for k, v in params.items()))
+    if data.get("error"):
+        typer.secho(f"错误: {data['error']}", fg=typer.colors.RED)
+
+    inputs = data.get("inputs", [])
+    typer.echo(f"参考图 ({len(inputs)}):")
+    for i, item in enumerate(inputs, 1):
+        if item.get("path"):
+            typer.echo(
+                f"  #{i} {item.get('label') or ''}"
+                f"  sha256:{str(item.get('sha256'))[:12]}  -> {item['path']}"
+            )
+        else:
+            typer.echo(f"  #{i} {item.get('source')}（URL，未落盘）")
+
+    outputs = data.get("outputs", [])
+    typer.echo(f"产物 ({len(outputs)}):")
+    for item in outputs:
+        layer = ""
+        if item.get("z_index") is not None:
+            layer = f" [z_index={item['z_index']}]"
+            if item.get("name"):
+                layer += f" {item['name']}"
+        size = ""
+        path = item.get("path")
+        if path and os.path.exists(path):
+            size = f"（{format_size(os.path.getsize(path))}）"
+        typer.echo(f"  #{item.get('index')}{layer}: {path} {size}")
+        if item.get("prompt_fragment"):
+            typer.echo(f"      可粘进 prompt: {item['prompt_fragment']}")
     typer.echo("")
+    typer.echo(f"目录: {directory}")
+    if outputs:
+        typer.echo(f"复现: seedream replay {data.get('run_id', run_id)}")
 
-    uvicorn.run(web_app, host=host, port=port, log_level="info")
+
+@app.command()
+def replay(
+    ref: Annotated[str, typer.Argument(help="任务 id 或 'last'（默认最近一次）")] = "last",
+    run: Annotated[bool, typer.Option("--run", help="真的执行（默认只做预演，不消耗额度）")] = False,
+    timeout: _TimeoutOpt = 300,
+) -> None:
+    """
+    复现一次生成任务 —— 用原任务的提示词、参考图与参数重新生成一次。
+
+    **默认只预演**（打印将要发送的内容，不消耗额度），确认无误后加 ``--run`` 真跑。
+    复现出的结果会记为一条**新任务**，并标注来源。
+
+    示例：
+
+      seedream replay                # 预演最近一次
+      seedream replay --run          # 真跑
+      seedream replay 20261008-143022-a1b2 --run
+    """
+    try:
+        source_id, directory = resolve_run(ref)
+    except FileNotFoundError as e:
+        typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    try:
+        data = load_run(directory)
+    except (OSError, json.JSONDecodeError) as e:
+        typer.secho(f"错误: 无法读取记录 {directory}: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    params = data.get("params", {})
+    prompt = data.get("prompt") or ""
+    # 参考图优先用任务目录里的副本（自包含，原图移位也能复现），缺失时退回原始来源
+    images: list[str] = []
+    for item in data.get("inputs", []):
+        if item.get("path") and Path(item["path"]).exists():
+            images.append(item["path"])
+        elif item.get("source") and not str(item["source"]).startswith("data:"):
+            images.append(item["source"])
+
+    typer.echo(f"  复现来源: {data.get('run_id', source_id)} ({data.get('kind', '?')})")
+    typer.echo(f"  提示词: {prompt or '(空)'}")
+    typer.echo(f"  参数: size={params.get('size')} format={params.get('output_format')}"
+               + (" 图层拆分=开" if params.get("layer_decomposition") else "")
+               + (" 背景=透明" if params.get("background") == "transparent" else ""))
+    typer.echo(f"  参考图: {len(images)} 张")
+    for i, p in enumerate(images, 1):
+        typer.echo(f"    #{i} {p}")
+
+    if not images and not prompt:
+        typer.secho("错误: 该任务既没有提示词也没有参考图，无法复现", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    if not run:
+        typer.echo("")
+        typer.secho("  预演结束（未调用 API）。确认无误后加 --run 真跑。", fg=typer.colors.YELLOW)
+        return
+
+    typer.echo("")
+    result = _execute(
+        kind=data.get("kind") if data.get("kind") in RUN_KINDS else "draw",
+        prompt=prompt or None,
+        images=images,
+        size=params.get("size", "2K"),
+        output_format=params.get("output_format", "png"),
+        watermark=bool(params.get("watermark", False)),
+        optimize=params.get("optimize", "standard"),
+        timeout=timeout,
+        layer_decomposition=bool(params.get("layer_decomposition", False)),
+        background=params.get("background", "opaque"),
+        converted_already=True,   # 记录里的 prompt 已是换算后的成品，避免二次换算
+        replayed_from=data.get("run_id", source_id),
+    )
+    _print_result(result)

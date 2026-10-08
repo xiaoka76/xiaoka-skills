@@ -46,14 +46,15 @@ python3 scripts/web_search.py --engine global "同款商品" --type visual --ima
 **核心能力：**
 - 文生图（支持中文 prompt）
 - 单/多图生图（最多 10 张参考图）
-- 交互编辑（WebUI 点选/框选标注 + `<point>` / `<bbox>` 坐标精确定位）
+- 交互编辑（`<point>` / `<bbox>` 坐标精确定位，先用 `mark` 读像素坐标）
 - 图层拆分（把单张图拆成 1 张底图 + 最多 16 个透明图层，带 z_index / 边界框 / 图层名）
-- 透明背景（`--background transparent`，产出带 alpha 通道的素材图）
+- 透明背景（`seedream cutout`，产出带 alpha 通道的素材图）
 - 标记预览（`seedream mark`：坐标网格 + 彩色标记，让 agent 自己核对编辑位置后再提交；分辨率自动——原始尺寸出图，超 2MB 预览上限才自动降档）
 - 参考图本地预检（像素 / 宽高比 / 大小超限时给出可执行的缩放建议，不自动改图）
 - 原生多语种文字渲染（14 种语言）
-- 自动本地保存（带会话记录）
+- **生成记录**（提示词 / 参考图副本 / 参数 / 产物全量落盘，`ls` 查询 · `show` 查看 · `replay` 复现）
 - 分辨率档位切换（1K / 1.5K / 2K，支持自定义宽高）
+- 子命令按**意图**划分（`draw` / `edit` / `split` / `cutout`，参数即该场景必需的信息）
 
 **内置模板分类（17 类共 91 个模板）：**
 
@@ -92,32 +93,32 @@ export ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
 
 # 安装为全局工具（推荐）
 uv tool install .
-seedream generate --prompt "一只橘猫坐在窗台上，午后阳光" --size 2K
+seedream draw "一只橘猫坐在窗台上，午后阳光" --size 2K
 
 # 或使用 uv run 直接运行
-uv run seedream generate --prompt "一只橘猫坐在窗台上，午后阳光" --size 2K
+uv run seedream draw "一只橘猫坐在窗台上，午后阳光" --size 2K
 
-# 图生图（URL 或本地路径）
-seedream generate \
-    --prompt "把这只猫放在日式庭院里" \
+# 图生图 / 编辑（URL 或本地路径）
+seedream edit "把这只猫放在日式庭院里" \
     --images "https://example.com/cat.jpg" \
     --size 1K
 
-# 交互编辑（启动 WebUI，支持多图预加载）
-seedream webui --preload /path/to/photo1.jpg --preload /path/to/photo2.jpg
+# 看历史任务 / 看详情 / 复现（默认只预演，加 --run 真跑）
+seedream ls
+seedream show last
+seedream replay last --run
 
-# 图层拆分：把设计稿拆成 1 底图 + 最多 16 个透明图层（prompt 可省略）
-seedream generate --layer-decomposition --images ./poster.png --size 2K
+# 图层拆分：把设计稿拆成 1 底图 + 最多 16 个透明图层（-p 可省略）
+seedream split ./poster.png
 
-# 透明背景：输出带 alpha 通道的素材图（仅图生图 + 1 张带透明通道的图）
-seedream generate --prompt "保留商品主体，去掉背景" \
-    --images ./product.png --background transparent
+# 透明背景：输出带 alpha 通道的素材图（1 张带透明通道的输入图，输出恒为 png）
+seedream cutout ./product.png
 
 # 标记预览：先看网格读坐标，再画框核对（坐标一律按像素给）
-seedream mark --image ./photo.png                      # 出网格图读坐标（默认原始尺寸）
-seedream mark --image ./photo.png --box 980,640,1180,860:手部 -o ./check.png
-# 提交模式：输出纯标记图，可直接作为 --images（prompt 里记得写“移除所有标记”）
-seedream mark --image ./photo.png --box 980,640,1180,860 --plain -o ./marked.png
+seedream mark ./photo.png                      # 出网格图读坐标（默认原始尺寸）
+seedream mark ./photo.png --box 980,640,1180,860:手部 -o ./check.png
+# 提交模式：输出纯标记图，可直接作为参考图（prompt 里记得写“移除所有标记”）
+seedream mark ./photo.png --box 980,640,1180,860 --plain -o ./marked.png
 ```
 
 详细用法请参阅 [SKILL.md](skills/seedream5pro-image/SKILL.md)。
@@ -134,12 +135,12 @@ xiaoka-skills/
 │       ├── SKILL.md         # 技能清单
 │       ├── pyproject.toml   # 包配置
 │       ├── src/seedream/    # 可安装的 Python 包
-│       │   ├── cli.py       # CLI 入口（generate/session/webui）
-│       │   ├── generate.py  # 核心生成逻辑
-│       │   ├── session.py   # Session 管理
-│       │   ├── webui.py     # 交互编辑 WebUI 后端
-│       │   ├── config.py    # 配置常量
-│       │   └── static/      # WebUI 前端文件
+│       │   ├── cli.py       # CLI 入口（draw/edit/split/cutout/mark/ls/show/replay）
+│       │   ├── generate.py  # 核心生成逻辑（调接口 + 产物落盘）
+│       │   ├── run.py       # 生成记录：任务目录、索引、输入副本、run.json 读写
+│       │   ├── tags.py      # prompt 内坐标标签的校验与换算
+│       │   ├── mark.py      # 标记预览渲染（网格 / 标签 / 自动降档）
+│       │   └── config.py    # 配置常量与数据根目录解析
 │       └── references/      # 知识库（17 类共 91 个提示词模板）
 │           ├── README.md
 │           ├── prompt-writing.md

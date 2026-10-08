@@ -16,12 +16,10 @@ skills/<skill-name>/
 ├── pyproject.toml        # 包配置（支持 uv tool install）
 ├── src/                  # 可安装的 Python 包
 │   └── <package>/
-│       ├── cli.py        # CLI 入口
-│       ├── generate.py   # 核心生成逻辑
-│       ├── session.py    # Session 管理
-│       ├── webui.py      # WebUI 后端
+│       ├── cli.py        # CLI 入口（子命令按“意图”划分，一个命令一件事）
+│       ├── generate.py   # 核心逻辑
 │       ├── config.py     # 配置常量
-│       └── static/       # WebUI 前端文件
+│       └── <module>.py   # 领域模块
 └── references/           # 知识库文档
     ├── README.md
     └── <category>/
@@ -33,7 +31,7 @@ skills/<skill-name>/
 | 技能名称 | 描述 | 入口 |
 |----------|------|------|
 | `byted-web-search` | 火山引擎豆包搜索（Custom/Global 双引擎，含图搜图） | `python3 scripts/web_search.py` |
-| `seedream5pro-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/交互编辑/图层拆分/透明背景/标记预览） | `seedream generate` · `seedream mark` |
+| `seedream5pro-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/图层拆分/透明背景/标记预览/生成记录） | `seedream draw` · `edit` · `split` · `cutout` · `mark` · `ls` |
 
 ## Agent 交互规则
 
@@ -63,14 +61,18 @@ Agent **必须**在执行任何技能操作前先读取 `SKILL.md`。
 - 参考模板中的 JSON 结构构建提示词
 - 遵循 `prompt-writing.md` 中的模板方法论
 
-### 4. Session 操作规范
+### 4. 生成记录规范
 
-Agent 在 WebUI 交互编辑流程中，应遵循以下规范：
+每次生成都会自动落地一条完整记录（提示词 / 参考图副本 / 参数 / 产物），Agent 应遵循：
 
-- **查看会话状态**：使用 `seedream session summary` 命令查看会话摘要（含图片数量、标注、状态、完整 prompt 和 user_intent）
-- **禁止直接读取 session.json**：图片以 base64 格式嵌入其中，文件通常有几 MB 甚至更大，不应使用 Read 工具直接读取
-- **更新 prompt**：使用 `seedream session set-prompt` 命令更新
-- **执行生成**：使用 `seedream generate --session` 从 session 执行生成
+- **查历史**：`seedream ls`（加 `--json` 便于程序化处理）
+- **看详情**：`seedream show last` 或 `seedream show <run_id>`；要结构化数据用 `--json`
+- **复用它人的图**：用户说"改上次那张图"时，先 `seedream show` 看清原提示词与输入，
+  再用 `seedream edit "..." --images <该任务 inputs/ 里的副本>` 继续加工
+- **复现**：`seedream replay <run_id>` **默认只预演、不消耗额度**，确认后加 `--run` 才真跑
+- **不要直接 Read 产物或记录文件**：产物是二进制图片；记录信息一律走 `show --json` / `ls --json`
+- **失败的任务同样保留输入**（`status=error`），可直接复现或改参数重跑
+- 完整字段见 `skills/seedream5pro-image/references/run-format.md`
 
 ### 5. 提示词策略
 
@@ -87,23 +89,22 @@ Agent 需根据任务类型选择不同的提示词策略：
 - **图层拆分的 prompt 可省略**：不传 `-p` 时模型自动识别主要元素；也可用自然语言指定拆分对象，或用 `<bbox>` 像素坐标精准圈定区域
 - **图层拆分约束**：仅 1 张输入图、仅 png/jpeg、size 仅档位（含 `auto`）、不支持自定义宽x高；任一图层失败即整体报错
 - **图层拆分的产出**：1 张底图（`z_index=0`）+ 最多 16 个透明 PNG 图层，元数据记录 `z_index` / 图层名 / 描述 / `bounding_box`
-- **透明背景**：`--background transparent`，仅图生图 + 1 张带透明通道的图，输出必须为 png
+- **透明背景**：用 `seedream cutout <图>`，仅图生图 + 1 张带透明通道的图，输出**恒为 png**（不提供格式选项）
 
 ### 7. 坐标口径（全流程统一）
 
 - **agent 只写原图像素**：直接在 prompt 里写 `<point>x y</point>` / `<bbox>x1 y1 x2 y2</bbox>`，坐标从 `mark` 网格上读数即可
-- **`seedream generate` 负责校验 + 换算**：发出去之前自动把像素标签换成接口要求的 0~999；`mark` 与图层拆分给出的成品标签**也是像素**，可直接粘
+- **CLI 负责校验 + 换算**：`seedream edit` / `seedream split` 在发出去之前自动把像素标签换成接口要求的 0~999；`mark` 与图层拆分给出的成品标签**也是像素**，可直接粘
 - 校验清单：个数不对 / 非整数 / 超范围 / 多图未标归属 / 有标签却无参考图 → **报错中止**；写错标签名、框写反、逗号分隔 → **提示**并继续
 - 对照表：`mark` 的输入/网格刻度/输出 `pixel` = 像素；`mark` 的 `fragments`、图层拆分的 `prompt_fragment` = **工具算好的 0~999，直接复制**；图层拆分的 `bounding_box.absolute` = 像素但属**底图坐标系**（换算须用底图尺寸，不是原图尺寸）
 - ⚠️ 接口返回的 `bounding_box.normalized` 是 **0~1000**、而 prompt 标签要 **0~999**，两者不同源 → 技能**不输出**该字段
-- **坐标只有一种形态：原图像素**。CLI 的任何输出都只有像素；坐标格式的转换完全在 `generate` 内部完成
-- `--norm` 只是回灌逃生舱，不是常规路径
+- **坐标只有一种形态：原图像素**。CLI 的任何输出都只有像素；坐标格式的转换完全在 CLI 内部完成（`--norm` 这类回灌入口在 v3.0 已移除）
 
 ### 8. 标记预览（agent 侧交互式编辑）
 
 - **编辑前先跑图层拆分**拿精确区域：手画框容易偏（实测第一次没框中、第二次底部仍在框外），而图层拆分会让模型自己圈定区域并给出**可直接用的 `<bbox>` 标签**
 - **坐标一律按像素给**（`--point x,y` / `--box x1,y1,x2,y2`），`mark` 给出的成品标签也是像素，直接粘进 prompt 即可
-- **先核对再提交**：先 `mark --image`（网格默认开，刻度在图片外留白区、值＝原图像素）读出坐标，再 `mark --box ...` 画框让有视觉的模型确认，偏了就改数字重跑
+- **先核对再提交**：先 `seedream mark <图>`（网格默认开，刻度在图片外留白区、值＝原图像素）读出坐标，再 `seedream mark <图> --box ...` 画框让有视觉的模型确认，偏了就改数字重跑
 - ⚠️ **预览图不要当 `--images` 传**（带留白与刻度，污染输入）；要传标记图就用 `--plain`
 - 用标记图做输入时（官方「任意标记」形式）**必须在 prompt 里写"移除所有标记"**，否则框可能被画进结果
 - 方法优先级：① 纯提示词 → ③ 坐标/框选 → ④ 标记图；② 单点适合替换单个物体，修结构不如框选
@@ -124,11 +125,11 @@ Agent 需根据任务类型选择不同的提示词策略：
 # 安装为全局工具（推荐）
 cd skills/seedream5pro-image
 uv tool install .
-seedream generate -p "一只橘色虎斑猫，毛发蓬松，翡翠绿眼睛，坐在洒满阳光的木质窗台上，窗外是秋天枫叶，写实摄影风格，暖金色侧光，中景构图，超精细8K" --size 2K
+seedream draw "一只橘色虎斑猫，毛发蓬松，翡翠绿眼睛，坐在洒满阳光的木质窗台上，窗外是秋天枫叶，写实摄影风格，暖金色侧光，中景构图，超精细8K" --size 2K
 
 # 或使用 uv run 直接运行
 cd skills/seedream5pro-image
-uv run seedream generate -p "一只橘色虎斑猫，毛发蓬松，翡翠绿眼睛，坐在洒满阳光的木质窗台上，窗外是秋天枫叶，写实摄影风格，暖金色侧光，中景构图，超精细8K" --size 2K
+uv run seedream draw "一只橘色虎斑猫，毛发蓬松，翡翠绿眼睛，坐在洒满阳光的木质窗台上，窗外是秋天枫叶，写实摄影风格，暖金色侧光，中景构图，超精细8K" --size 2K
 
 # 需要设置 API Key（仅支持环境变量，不读取 .env 文件）
 export ARK_API_KEY="your-api-key"
@@ -137,19 +138,27 @@ export ARK_API_KEY="your-api-key"
 # agent plan 用 https://ark.cn-beijing.volces.com/api/plan/v3，Key 与端点必须匹配，否则 401
 export ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
 
-# 启动交互编辑 WebUI（默认端口 8000）
-seedream webui --preload /path/to/image.png
+# 可选：生成记录的存放根目录（默认用当前工作目录下的 .seedream/）
+export SEEDREAM_HOME="/path/to/data"
 ```
 
-## 输出目录
+## 生成记录（输出目录）
 
-图像生成结果按会话类型统一保存到 `.seedream/` 目录：
+每次生成一个目录，落在**数据根目录**（`$SEEDREAM_HOME`，未设置时为当前工作目录下的 `.seedream/`）：
 
-- 文生图/图生图/图层拆分 → `.seedream/generate/<session_id>/output/`
-- 交互编辑 → `.seedream/edit/<session_id>/output/`
-- 图层拆分产出：底图 `<uuid>-L00.<ext>`、图层 `<uuid>-L<nn>-<图层名>.png`（图层恒为 png）
+```
+<数据根>/.seedream/
+├── index.jsonl                     # 一行一条任务摘要，ls 直接读它
+├── runs/<YYYYMMDD-HHMMSS-xxxx>/    # 一次生成 = 一个目录
+│   ├── run.json                    # 提示词 / 参数 / 输入 / 产物（唯一真相）
+│   ├── inputs/                     # 参考图副本（sha256 命名，可寻址）
+│   └── outputs/                    # 产物（图层拆分：底图 + L01…L16）
+└── mark/                           # mark 的标记预览图
+```
 
-该目录已被加入 `.gitignore`，不会提交到版本控制。
+- 图层拆分产出：底图 `<uid>-L00.png`、图层 `<uid>-L<nn>-<图层名>.png`（图层恒为 png）
+- 查询用 `seedream ls` / `show` / `replay`，字段说明见 `references/run-format.md`
+- 该目录已被加入 `.gitignore`，不会提交到版本控制。
 
 ## 添加新技能
 

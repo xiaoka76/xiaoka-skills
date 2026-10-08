@@ -44,4 +44,4 @@
 |------|------|
 | `prompt-guide.md` | 官方《Seedream 4.0-5.0 提示词指南》要点：5 条通用规则、文生图/图生图/多图输入各场景官方范例、与 5.0 pro 的差异 |
 | `prompt-writing.md` | JSON 提示词模板总规范：模板怎么组织、字段怎么设计、参数如何区分必问/默认/随机 |
-| `session-format.md` | 交互编辑 session 的 JSON 格式说明 |
+| `run-format.md` | 生成记录（run）的文件格式：`run.json` / `inputs/` / `outputs/` / `index.jsonl` 字段说明 |

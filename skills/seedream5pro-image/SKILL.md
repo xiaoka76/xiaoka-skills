@@ -1,16 +1,16 @@
 ---
 name: seedream5pro-image
-description: Seedream 5.0 Pro 专用图像生成技能。文生图 / 图生图 / 交互编辑（<point>/<bbox> 坐标精确定位）/ 图层拆分（1 底图 + 最多 16 个透明图层），支持透明背景，自动保存到本地。内置 17 类提示词模板。使用该技能时：用户想画图、生成图片、改图、编辑图片、做海报/UI/产品图/插画/角色/地图/信息图/分镜等任何视觉内容，或需要高质量的 AI 图像生成能力，或需要把设计稿拆成可编辑图层 / 抠出透明背景素材。
+description: Seedream 5.0 Pro 专用图像生成技能。文生图 / 图生图 / 交互编辑（<point>/<bbox> 坐标精确定位）/ 图层拆分（1 底图 + 最多 16 个透明图层），支持透明背景。每次生成都会保存完整过程（提示词、参考图副本、参数、产物），可查询、可复现。内置 17 类提示词模板。使用该技能时：用户想画图、生成图片、改图、编辑图片、做海报/UI/产品图/插画/角色/地图/信息图/分镜等任何视觉内容，或需要高质量的 AI 图像生成能力，或需要把设计稿拆成可编辑图层 / 抠出透明背景素材。
 license: MIT
-tags: ["image-generation", "seedream-5.0-pro", "seedream", "volcengine", "text-to-image", "image-to-image", "interactive-edit", "layer-decomposition", "transparent-background", "local-save"]
-version: 2.4.0
+tags: ["image-generation", "seedream-5.0-pro", "seedream", "volcengine", "text-to-image", "image-to-image", "interactive-edit", "layer-decomposition", "transparent-background", "local-save", "reproducible", "cli"]
+version: 3.0.0
 ---
 
 # Seedream 5.0 Pro 图像生成
 
 ## 概览
 
-专为 **doubao-seedream-5-0-pro-260628** 打造的独立图像生成技能。内置 17 类提示词模板，支持文生图/图生图/交互编辑/图层拆分，自动保存到本地并生成会话记录。
+专为 **doubao-seedream-5-0-pro-260628** 打造的独立图像生成技能。内置 17 类提示词模板，支持文生图 / 图生图 / 交互编辑 / 图层拆分。每次生成都会落地一条完整记录（提示词、参考图副本、参数、产物），所以任何一张图都能追回「它是怎么做出来的」，也能一键复现。
 
 **模型 ID**: `doubao-seedream-5-0-pro-260628`
 
@@ -26,6 +26,7 @@ version: 2.4.0
 | **标记预览**（`mark`，agent 自己核对坐标） | ✅ |
 | 原生多语种文字渲染（14 种语言） | ✅ |
 | 本地自动保存（无 403） | ✅ |
+| **生成记录**（提示词/参考图/产物，`ls`·`show`·`replay`） | ✅ |
 | 提示词优化（standard / fast） | ✅ |
 | 文生组图 / 批量生成 | ❌（接口明确 5.0 pro 不支持 `sequential_image_generation`） |
 | 流式输出 | ❌ |
@@ -127,7 +128,7 @@ version: 2.4.0
 
 ```
 你写：      将图1<bbox>300 1240 610 1590</bbox>区域换成马克杯      ← 原图像素（网格上直接读）
-   ↓  seedream generate 自动校验 + 转换坐标格式
+   ↓  seedream 自动校验 + 转换坐标格式
 发给接口：  （坐标已被工具转换成接口需要的格式，你不需要也不应该关心它长什么样）
 ```
 
@@ -137,13 +138,13 @@ version: 2.4.0
 | `mark` 的输入坐标 / 网格刻度 / 输出 | **原图像素** | — |
 | `mark` 给出的成品标签 | **原图像素**，可直接粘进 prompt | — |
 | 图层拆分给出的 `prompt_fragment` | **原图像素**（已从底图坐标系换算回输入图） | — |
-| 发给接口之前 | 校验 + 转换成接口需要的格式 | **`generate` 内部** |
+| 发给接口之前 | 校验 + 转换成接口需要的格式 | **CLI 内部**（`edit` / `split`） |
 | CLI 的任何输出 | **永远只有像素** | — |
 
 > 坐标只有一种形态：**原图像素**。转换是工具内部的事，交互过程中不会出现第二种坐标，
 > 你也不需要知道接口最终收到了什么。
 
-### `generate` 的标签校验清单
+### 坐标标签的校验清单（`edit` / `split`）
 
 写错的标签不会带着去请求接口——会在本地先被拦下或修正：
 
@@ -181,8 +182,8 @@ version: 2.4.0
 ### 1. 禁止自行编写简短提示词
 
 **任何情况下，Agent 不得自行编写简短的自然语言提示词直接传给模型。** 包括但不限于：
-- 禁止：用户说"画一只猫" → 直接写 `seedream generate -p "一只可爱的猫"`
-- 禁止：用户说"做个海报" → 直接写 `seedream generate -p "一张科技风海报"`
+- 禁止：用户说"画一只猫" → 直接写 `seedream draw "一只可爱的猫"`
+- 禁止：用户说"做个海报" → 直接写 `seedream draw "一张科技风海报"`
 
 ### 2. 强制查阅模板（必须执行）
 
@@ -214,7 +215,7 @@ version: 2.4.0
 
 步骤 5 — 展示确认（可选）
   → 可将展开后的完整 prompt 展示给用户确认
-  → 简单任务可跳过此步骤直接执行 seedream generate
+  → 简单任务可跳过此步骤直接执行 seedream draw
 ```
 
 ### 3. Prompt 丰富度底线（仅适用于文生图）
@@ -269,16 +270,16 @@ version: 2.4.0
 # 安装为全局工具（推荐）
 cd skills/seedream5pro-image
 uv tool install .
-seedream generate --help
+seedream --help
 
 # 或使用 uv run 直接运行（其次）
 cd skills/seedream5pro-image
-uv run seedream generate --help
+uv run seedream --help
 
 # 或安装依赖后在项目中使用
 cd skills/seedream5pro-image
 pip install -e .
-seedream generate --help
+seedream --help
 ```
 
 ### 环境变量
@@ -286,6 +287,7 @@ seedream generate --help
 ```bash
 export ARK_API_KEY="your-api-key"                               # 必填
 export ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"  # 可选，默认即此值
+export SEEDREAM_HOME="/path/to/data"                            # 可选，生成记录的存放根
 ```
 
 - **API Key**：按优先级读 `ARK_API_KEY` > `MODEL_IMAGE_API_KEY` > `MODEL_AGENT_API_KEY`。
@@ -295,29 +297,30 @@ export ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"  # 可选，默�
   - coding plan：`https://ark.cn-beijing.volces.com/api/coding/v3` —— 无图像接口，传入会被自动归一到 `/api/v3`
   - **agent plan：`https://ark.cn-beijing.volces.com/api/plan/v3`** —— 支持本技能模型，图像用量计入套餐「图像/视频生成」额度
 - ⚠️ agent plan 的 Key 打默认 `/api/v3` 会返回 401（反之亦然）；换套餐时 Base URL 与 Key 要一起换。
+- **`SEEDREAM_HOME`**（可选）：生成记录的存放根目录。不设置时用**当前工作目录**下的 `.seedream/`，因此每个 agent / 每个项目的数据天然互相隔离；需要集中存放时才显式指定。
 
 ## 用法
 
 ### 文生图
 
 ```bash
-seedream generate -p "一只可爱的猫坐在窗台上，阳光洒进来" --size 2K
+seedream draw "一只可爱的猫坐在窗台上，阳光洒进来" --size 2K
 ```
 
-### 图生图（URL 或本地路径）
+### 图生图 / 编辑（URL 或本地路径）
 
 ```bash
 # 网络 URL
-seedream generate -p "把这张照片转换成动漫风格" --images "https://example.com/photo.jpg" --size 2K
+seedream edit "把这张照片转换成动漫风格" --images "https://example.com/photo.jpg" --size 2K
 
 # 本地路径（自动编码为 Base64）
-seedream generate -p "把这张照片转换成动漫风格" --images "./photo.jpg" --size 2K
+seedream edit "把这张照片转换成动漫风格" --images "./photo.jpg" --size 2K
 ```
 
 ### 多图融合
 
 ```bash
-seedream generate -p "将图1的人物和图2的背景融合在一起" --images "https://example.com/person.jpg" --images "https://example.com/bg.jpg"
+seedream edit "将图1的人物和图2的背景融合在一起" --images "https://example.com/person.jpg" --images "https://example.com/bg.jpg"
 ```
 
 `--images` 可多次指定，最多 10 张参考图。
@@ -360,57 +363,47 @@ seedream generate -p "将图1的人物和图2的背景融合在一起" --images 
 
 ### 交互编辑
 
-> 想给 agent 一条"无浏览器"的交互编辑路径，见上方 **「标记预览（`mark`）」** 章节：先出网格图读像素坐标、再画框核对、然后把**像素标签**写进 prompt（`generate` 会自动换算）。
+> 交互编辑的入口是 **`seedream mark` + `seedream edit`**：先用 mark 出网格图读像素坐标、画框核对，再把**像素标签**写进编辑指令（CLI 会自动校验并换算）。完整示例见下方「标记预览（`mark`）」章节。
 
 接口的交互编辑支持**两种定位形式**（都是"待编辑图片 + prompt"两个输入要素）：
 
 | 形式 | 做法 | 命令行是否可直用 |
 |------|------|------------------|
-| **① 任意标记 + 自然语言定位** | 在图上手绘草图 / 涂鸦 / 圈选 / 箭头标出区域，prompt 里用自然语言描述标记位置和意图 | ✅ 可直接用 `--images 标注图.png -p "..."` |
+| **① 任意标记 + 自然语言定位** | 在图上手绘草图 / 涂鸦 / 圈选 / 箭头标出区域，prompt 里用自然语言描述标记位置和意图 | ✅ `seedream edit "..." --images 标注图.png` |
 | **② 坐标精准定位** | prompt 里用 `<point>` / `<bbox>` 标签精确指定位置（**写像素**，工具换算） | ✅ 用 `mark` 读坐标，或直接用图层拆分给的标签 |
 
 形式 ① 示例（图上已用蓝色框圈出区域）：
 
 ```bash
-seedream generate --images ./annotated.png -p "在蓝色框内添加一个电视机"
+seedream edit "在蓝色框内添加一个电视机" --images ./annotated.png
 ```
 
-形式 ② 的坐标由 WebUI 点选/框选自动换算，工作流如下——WebUI 负责标注与坐标换算，agent 读取 session 后执行生成：
+形式 ② 全流程用 `mark` 读坐标、用 `edit` 提交，不需要浏览器：
 
 ```bash
-# 启动 WebUI（默认端口 8000）
-seedream webui
+# 1) 出网格图，读出要编辑区域的像素坐标
+seedream mark photo.png
 
-# 可选：预加载图片
-seedream webui --preload /path/to/image.png
+# 2) 画框核对（框偏了就改数字重跑，直到框住目标）
+seedream mark photo.png --box 820,520,1180,860:手部
 
-# 可选：指定端口号
-seedream webui --port 8000
+# 3) 把命令给出的 <bbox> 标签直接写进编辑指令
+seedream edit "把图1<bbox>332 310 478 512</bbox>区域换成白瓷马克杯，保持其他部分不变" --images photo.png
 ```
-
-启动后在浏览器中操作：
-
-1. 上传图片或查看预加载的图片
-2. 选择「点选」或「框选」模式标注编辑区域
-3. 在编辑意图框中输入指令（如"把这个狗换成猫"）
-4. 点击「保存」后，agent 读取 session 润色 prompt 并执行生成
-
-详细工作流见下方「交互编辑工作流（WebUI）」章节。
 
 ### 图层拆分
 
 把**单张图片**自动拆解为 **1 张底图 + 最多 16 个图层**。每个图层都是带透明通道的 PNG，接口同时返回图层名称、描述、叠放顺序（`z_index`）和边界框（`bounding_box`），便于在设计工具或画布中移动、缩放、替换、调色、重新组合。
 
 ```bash
-# ① 自动全拆：prompt 可省略，模型自动识别主体/文字/背景/装饰元素
-seedream generate --layer-decomposition --images ./poster.png --size 2K
+# ① 自动全拆：不给 --prompt，模型自动识别主体/文字/背景/装饰元素
+seedream split ./poster.png
 
 # ② 指定拆分对象：用自然语言描述要拆什么
-seedream generate --layer-decomposition --images ./poster.png \
-  -p "拆出人物、标题文字和右下角装饰图标"
+seedream split ./poster.png -p "拆出人物、标题文字和右下角装饰图标"
 
 # ③ 精准指定区域：用像素坐标标签圈定待拆元素
-seedream generate --layer-decomposition --images ./poster.png \
+seedream split ./poster.png \
   -p "把图片拆成 3 个图层：人物 <bbox>347 305 642 997</bbox>、标题 <bbox>180 64 812 198</bbox>、副标题 <bbox>178 714 826 810</bbox>"
 ```
 
@@ -426,9 +419,9 @@ seedream generate --layer-decomposition --images ./poster.png \
 
 - 仅支持输入 **1 张**图片（传多张直接报错）；图片格式仅限 `png` / `jpeg`，≤30MB，总像素 `[512×512, 6000×6000]`
 - `--size` 仅支持档位 `1K` / `1.5K` / `2K` / `auto`（`auto` 按输入图尺寸自适应），**不支持自定义宽x高**
-  - 注意：接口在图层拆分场景的 size 默认值是 `auto`，但本 CLI 的 `--size` 默认值统一是 `2K`；需要按原图尺寸自适应时请**显式传 `--size auto`**
+  - `seedream split` 的 `--size` **默认就是 `auto`**（与接口在该场景的默认值一致），一般不用传
 - **任一图层生成失败 → 整体请求报错，不支持部分成功**，失败时不会有"部分可用"的结果
-- `--output-format` **只控制底图格式**，图层始终输出 png
+- `--format` **只控制底图格式**，图层始终输出 png
 - 若 prompt 要求的拆分数量超过 16 个上限，可能导致部分图层信息丢失
 - 限流特殊：图层拆分每次请求**预扣 17 IPM**（按最大 17 张预留配额），图片全部生成后按实际数量返还
 
@@ -439,19 +432,18 @@ seedream generate --layer-decomposition --images ./poster.png \
 
 ```bash
 # 1) 先拆分（每个图层都会给出像素 bbox + 可直接用的 <bbox> 标签）
-seedream generate --images photo.png --layer-decomposition --size 2K
+seedream split photo.png --size 2K
 #    L6 `热咖啡杯带热气`  bbox(像素，底图坐标系)=[217, 1118, 466, 1595]
 #                        可直接粘进 prompt: <bbox>217 1118 466 1595</bbox>
 
 # 2) 直接拿那个标签组装编辑指令（不用自己量坐标）
-seedream generate --images photo.png \
-  -p "将图1<bbox>217 1118 466 1595</bbox>区域内的纸杯替换成白色陶瓷马克杯，保持其他部分不变"
+seedream edit "将图1<bbox>217 1118 466 1595</bbox>区域内的纸杯替换成白色陶瓷马克杯，保持其他部分不变" --images photo.png
 ```
 
 **输出与还原：**
 
 命令行会打印底图、图层数量、每个图层的 `z_index` / 名称 / **像素 bbox** / **可直接写进 prompt 的
-`<bbox>` 标签**；完整信息落在同名 `.md` 元数据中。还原或重组图层时：
+`<bbox>` 标签**；完整信息落在该次任务的 `run.json` 里。还原或重组图层时：
 
 1. 把 `z_index = 0` 的对象（底图）作为画布背景
 2. 其余图层按 `z_index` 从小到大排序后依次叠放
@@ -466,23 +458,26 @@ seedream generate --images photo.png \
 
 ### 透明背景
 
-用 `--background transparent` 生成带透明通道的图片（抠图 / 素材化场景）。
+用 `seedream cutout` 生成带透明通道的图片（抠图 / 素材化场景）。
 
 ```bash
-seedream generate --images ./product.png -p "保留商品主体，去掉背景" --background transparent
+seedream cutout ./product.png
+
+# 需要指定提取要求时用 -p（不传则用内置的默认提取指令）
+seedream cutout ./product.png -p "保留商品主体，只去掉背景，边缘干净"
 ```
 
 **约束：**
 
 - 仅支持**图生图**场景，且只允许输入 **1 张带透明通道的图片**
-- 透明背景模式下输出必须为 `png`（显式传 `--output-format jpeg` 会触发 API 报错，本地会提前拦截）
+- 输出**恒为 `png`**（透明通道不能存 jpeg）——`cutout` 不提供格式选项，从源头上避免误用
 - 传入不含 alpha 通道的格式（如 `jpeg`）会报错——本地文件会提前拦截，URL 由 API 判断
-- 不传该参数时默认 `opaque`（常规实体背景）
+- 其他子命令一律是常规实体背景（`opaque`）
 
 ### 提示词优化模式（`--optimize`）
 
 ```bash
-seedream generate -p "..." --optimize fast
+seedream draw "..." --optimize fast
 ```
 
 | 模式 | 说明 |
@@ -495,33 +490,30 @@ seedream generate -p "..." --optimize fast
 
 ### 输出目录
 
-生成结果统一保存在 `.seedream/` 目录下，按会话类型和 ID 自动组织：
-
-```
-.seedream/
-├── generate/<session_id>/      # 文生图/图生图/图层拆分
-│   ├── session.json
-│   └── output/...
-├── edit/<session_id>/          # 交互编辑
-│   ├── session.json
-│   └── output/...
-└── mark/<id>.jpg               # mark 标记预览图（--out *.png 可要无损）
-```
+生成结果保存在数据根目录下的 `runs/<任务id>/`，结构见下方「生成记录与复用」章节。
 
 ## 命令行参数
 
-| 参数 | 简写 | 说明 | 默认 |
-|------|------|------|------|
-| `--prompt` | `-p` | 提示词 / 编辑指令 / 拆分意图（与 `--session` 互斥；图层拆分场景可省略） | - |
-| `--session` | `-S` | 从 session.json 读取 prompt 和图片路径 | - |
-| `--images` | - | 参考图 URL 或本地路径（可多次指定，最多 10 张；图层拆分仅允许 1 张） | - |
-| `--size` | `-s` | 分辨率：`1K` / `1.5K` / `2K` 或自定义宽x高；图层拆分另支持 `auto` | `2K` |
-| `--output-format` | - | 输出格式：`png` / `jpeg`（图层拆分只作用于底图） | `png` |
-| `--layer-decomposition` | - | 图层拆分：1 底图 + 最多 16 个透明图层 | 关闭 |
-| `--background` | - | 背景模式：`opaque` / `transparent` | `opaque` |
-| `--watermark` | - | 启用水印 | 关闭 |
-| `--optimize` | - | 提示词优化：`standard` / `fast` | `standard` |
-| `--timeout` | `-t` | API 超时（秒） | `300` |
+命令按**意图**划分：一个子命令就是一件事，参数集合即该场景必需的信息。
+
+| 命令 | 用途 | 关键参数 |
+|------|------|---------|
+| `seedream draw "<提示词>"` | 文生图 | `--size` `--format` |
+| `seedream edit "<指令>" --images <图...>` | 图生图 / 交互编辑（最多 10 张） | `--images`（必填）`--size` `--format` |
+| `seedream split <图>` | 图层拆分（1 底图 + 最多 16 图层） | `-p`（可选）`--size`（默认 `auto`） |
+| `seedream cutout <图>` | 透明背景素材（恒输出 png） | `-p`（可选）`--size` |
+| `seedream mark <图> --box ...` | 标记预览 + 坐标标签 | `--point` `--box` `--grid` `--plain` |
+| `seedream ls` / `show` / `replay` | 查历史 / 看详情 / 复现 | `--json` `--limit` `--run` |
+
+四个生成子命令共有的可选项：
+
+| 参数 | 说明 | 默认 |
+|------|------|------|
+| `--size` / `-s` | 分辨率：`1K` / `1.5K` / `2K`（`split` 另支持 `auto`，不支持自定义宽x高；其余支持 `宽x高`） | `2K`（`split` 为 `auto`） |
+| `--format` | 输出格式：`png` / `jpeg`（`split` 只作用于底图） | `png` |
+| `--watermark` | 启用水印 | 关闭 |
+| `--optimize` | 提示词优化：`standard` / `fast` | `standard` |
+| `--timeout` / `-t` | API 超时（秒） | `300` |
 
 ### 接口默认值 vs 本技能默认值
 
@@ -530,26 +522,26 @@ seedream generate -p "..." --optimize fast
 | 参数 | 接口默认值 | 本技能实际下发 |
 |------|-----------|---------------|
 | `watermark` | **`true`**（不传即加"AI 生成"水印） | 显式 `false`（加 `--watermark` 才带水印） |
-| `output_format` | **`jpeg`** | 显式 `png`（`--output-format` 可改） |
+| `output_format` | **`jpeg`** | 显式 `png`（`--format` 可改；`cutout` 恒为 png） |
 | `response_format` | **`url`**（链接仅 24 小时有效） | **强制 `b64_json`**，本地解码保存，规避 24 小时失效与防盗链 403 |
 | `size` | `2K`（**图层拆分场景为 `auto`**） | 显式 `2K`（`--size` 可改；图层拆分需自适应请显式传 `auto`） |
 | `optimize_prompt_options.mode` | `standard` | 显式 `standard`（`--optimize` 可改） |
-| `background` | `opaque` | 仅在 `--background transparent` 时下发 |
-| `layer_decomposition` | `false` | 仅在 `--layer-decomposition` 时下发 |
+| `background` | `opaque` | 仅在 `seedream cutout` 时下发 |
+| `layer_decomposition` | `false` | 仅在 `seedream split` 时下发 |
 
 > ⚠️ 三个"反直觉"的接口默认值最容易踩坑：**不传 `watermark` 会加水印**、**不传 `output_format` 得到 jpeg**、**不传 `response_format` 返回的是 24 小时失效的 URL**。
 
 ## 标记预览（`mark`）—— 让 agent 自己核对坐标
 
 `seedream mark` 把要编辑的位置画成可见标记，并输出可直接写进 prompt 的坐标标签。
-**输入输出都只走原图像素**：给出的成品标签也是像素，直接粘进 prompt 即可，`generate` 会校验并换算（见「坐标口径」章节）。
+**输入输出都只走原图像素**：给出的成品标签也是像素，直接粘进 prompt 即可，`seedream edit` 会校验并换算（见「坐标口径」章节）。
 核心价值是**先看一眼再提交**：坐标选得对不对，让有视觉能力的模型自己看图确认，而不是盲猜。
 
 ### 两种模式
 
 | 模式 | 命令 | 输出 | 用途 |
 |------|------|------|------|
-| **预览模式**（默认） | `seedream mark --image a.png --box ...` | 原图 + 留白坐标网格 + 彩色标记 + 坐标标签 | 给 agent 核对坐标 |
+| **预览模式**（默认） | `seedream mark a.png --box ...` | 原图 + 留白坐标网格 + 彩色标记 + 坐标标签 | 给 agent 核对坐标 |
 | **提交模式** | `... --plain -o marked.png` | 原图宽高比、只有彩色标记（无网格、无文字） | **可直接当 `--images` 传给模型** |
 
 > ⚠️ **预览图不要当 `--images` 传**——它带留白和刻度数字，会污染模型输入，等于把"坐标定位"误变成"标记图输入"。要用标记图做输入就加 `--plain`。
@@ -557,8 +549,7 @@ seedream generate -p "..." --optimize fast
 ### 坐标怎么给
 
 - **默认按图片像素**传（`--point x,y` / `--box x1,y1,x2,y2`）——agent 从网格刻度上直接读数，不需要心算。
-- **坐标一律写像素**；坐标格式的转换是 `seedream generate` 的事，agent 不用管。
-- `--norm` 可直接传 0~999（例如把接口返回的 `bounding_box` 回灌）。
+- **坐标一律写像素**；坐标格式的转换是 `seedream edit` 的事，agent 不用管。
 - 标签用冒号内联：`--box 100,80,420,320:手部`（不传标签也能用）。
 
 ### 网格（默认开启，可关）
@@ -594,21 +585,19 @@ seedream generate -p "..." --optimize fast
 
 ```bash
 # 1) 先出网格图，读出问题区域的像素坐标
-seedream mark --image photo.png -o /tmp/grid.png
+seedream mark photo.png -o /tmp/grid.png
 #    → agent 用 view_image 看图，读出「手部」范围，例如 980,640,1180,860
 
 # 2) 画框确认（框偏了就改数字重跑，直到框住目标）
-seedream mark --image photo.png --box 980,640,1180,860:手部 -o /tmp/check.png
+seedream mark photo.png --box 980,640,1180,860:手部 -o /tmp/check.png
 #    → 命令会输出 <bbox>392 384 472 516</bbox>，agent 看图确认
 
 # 3-a) 坐标式编辑（推荐：标记不进图，最干净）
-seedream generate --images photo.png \
-  -p "修复图1<bbox>392 384 472 516</bbox>区域中手部的结构错误，保持其他部分不变"
+seedream edit "修复图1<bbox>392 384 472 516</bbox>区域中手部的结构错误，保持其他部分不变" --images photo.png
 
 # 3-b) 或把标记图本身当输入（官方「任意标记 + 自然语言」形式）
-seedream mark --image photo.png --box 980,640,1180,860 --plain -o /tmp/marked.png
-seedream generate --images /tmp/marked.png \
-  -p "修复红框区域中手部的结构错误，移除所有标记线和框，保持其他部分不变"
+seedream mark photo.png --box 980,640,1180,860 --plain -o /tmp/marked.png
+seedream edit "修复红框区域中手部的结构错误，移除所有标记线和框，保持其他部分不变" --images /tmp/marked.png
 ```
 
 > 3-b 必须带上「移除所有标记」这类指令，否则画上去的框有概率被模型画进结果里。
@@ -622,12 +611,12 @@ seedream generate --images /tmp/marked.png \
 
 | 参数 | 说明 | 默认 |
 |------|------|------|
-| `--image` / `-i` | 原图路径（不支持 URL，先下载到本地） | 必填 |
+| `<图片>`（位置参数） | 原图路径（不支持 URL，先下载到本地） | 必填 |
 | `--point x,y[:标签]` | 点选坐标（像素，可多次指定） | - |
 | `--box x1,y1,x2,y2[:标签]` | 框选坐标（像素，可多次指定） | - |
 | `--grid` / `--no-grid` | 预览图是否叠加坐标网格 | 开启 |
-| `--plain` | 提交模式：输出纯标记图，可直接作 `--images` | 关闭 |
-| `--out` / `-o` | 输出路径（后缀决定格式：`.jpg` 默认，`.png` 无损） | `.seedream/mark/<id>.jpg` |
+| `--plain` | 提交模式：输出纯标记图，可直接作参考图传给模型 | 关闭 |
+| `--out` / `-o` | 输出路径（后缀决定格式：`.jpg` 默认，`.png` 无损） | `<数据根>/mark/<id>.jpg` |
 | `--max-edge` | 输出最长边上限；默认自动（原始尺寸，超 2MB 自动降档），`0` = 强制原始尺寸且不降档 | 自动 |
 | `--json` | 以 JSON 输出结果，便于程序化处理 | 关闭 |
 
@@ -671,55 +660,65 @@ y_norm = round(y_px / 图片高度 * 1000)
 | 多主体指定 | `把图1<bbox>120 180 640 760</bbox>区域内的左侧人物换成机器人` |
 | 部分保持不变 | `把图1<bbox>120 180 640 760</bbox>区域替换成花园，图1<bbox>700 120 920 360</bbox>区域保持不变` |
 
-## 交互编辑工作流（WebUI）
+## 生成记录与复用（`ls` / `show` / `replay`）
 
-当用户需要对已有图片做局部修改时，可以使用交互编辑 WebUI 完成点选/框选标注，再由 agent 结合模板完善 prompt 后执行生成。
+每次生成都会在**数据根目录**（`$SEEDREAM_HOME`，未设置时为当前工作目录下的 `.seedream/`）落地一条完整记录：
+**提示词、参考图副本、参数、产物**。所以任何一张图都能追回「它是怎么做出来的」，也能原样复现。
 
-### 完整流程
+### 目录结构
 
-1. Agent 启动 `seedream webui`，生成会话 ID，打开浏览器
-2. 用户在 WebUI 中上传图片、标注编辑区域、输入编辑意图、点击保存
-3. Agent 使用 `seedream session summary` 查看会话摘要（图片数量、标注、状态、完整 prompt 和 user_intent）
-4. 根据 `user_intent` 匹配编辑模板，确认是否需要调整 prompt
-5. 如需调整，使用 `seedream session set-prompt` 更新 prompt
-6. 执行 `seedream generate --session` 生成
-
-> **注意**：不要在 WebUI 保存后直接读取 session.json 文件。应使用 `session summary` 命令获取信息。
->
-> **图生图/编辑场景下，prompt 应保持简洁**，用"图1"/"图2"指代参考图即可，让模型从参考图中提取视觉特征。不要编造参考图中不存在的细节，也不要过度堆砌描述。
-
-### 启动 WebUI
-
-```bash
-seedream webui                          # 基本启动（默认 127.0.0.1:8000）
-seedream webui --port 8000              # 指定端口
-seedream webui --preload /path/to/img.png  # 预加载图片
-seedream webui --host 0.0.0.0           # 允许局域网访问（谨慎使用）
+```
+<数据根>/.seedream/
+├── index.jsonl                     # 一行一条任务摘要（append-only），ls 直接读它
+├── runs/
+│   └── 20261008-143022-a1b2/       # 一次生成 = 一个目录（名字以时间开头，天然按时间排序）
+│       ├── run.json                # 唯一真相：kind / 提示词 / 参数 / 输入 / 产物
+│       ├── inputs/                 # 参考图副本（sha256 命名，原图移动或删除也能复现）
+│       └── outputs/                # 产物（图层拆分时是底图 + L01…L16）
+└── mark/                           # mark 的标记预览图（--out *.png 可要无损）
 ```
 
-> 默认绑定 `127.0.0.1`，仅本机可访问。如需局域网访问，显式传入 `--host 0.0.0.0`。
+`run.json` 的关键字段：
 
-### Session 状态机
+| 字段 | 说明 |
+|------|------|
+| `kind` | `draw` / `edit` / `split` / `cutout` |
+| `prompt` / `prompt_raw` | 实际发送的提示词 / 含像素标签的原始提示词 |
+| `params` | size / output_format / watermark / optimize / layer_decomposition / background |
+| `inputs[]` | 参考图 `{source, path, sha256, size, width, height}` —— **已落盘、可寻址** |
+| `outputs[]` | 产物 `{path, size, output_format, z_index, name, description, bbox_pixel, prompt_fragment}` |
+| `status` / `error` | `pending` / `running` / `success` / `error` |
 
-Edit session: `created → editing → saved`（保存后可回到 editing）。Generate session: `pending → running → success/error`。
+### 三个命令
 
-### Session 文件
+| 命令 | 用途 |
+|------|------|
+| `seedream ls [-n N] [--all] [--json]` | 列出历史任务（最新在前）；`--all` 附带 v2 遗留目录（只读，不迁移） |
+| `seedream show [<id>|last] [--json]` | 看一条任务的完整记录（提示词、参考图、产物） |
+| `seedream replay [<id>|last] [--run]` | 复现：**默认只预演**，确认后加 `--run` 真跑 |
 
-Edit session 和 Generate session 的完整 JSON 格式见 [references/session-format.md](references/session-format.md)。
-
-### Agent 操作 Session
+### 典型复用场景
 
 ```bash
-seedream session summary .seedream/edit/{uuid}/session.json  # 查看摘要（含完整 prompt 和 user_intent）
-seedream session set-prompt .seedream/edit/{uuid}/session.json --prompt "..."  # 更新 prompt
-seedream generate --session .seedream/edit/{uuid}/session.json  # 从 session 生成
+# “把上次那张图再改一下”
+seedream ls                      # 找到那次任务
+seedream show last               # 看它的提示词与产物
+seedream edit "在原来基础上把背景换成雪景，其他不变" --images <上次用的输入图>
+
+# “再生成一张一样的”（复现）
+seedream replay last             # 先预演，确认提示词/参考图无误（不消耗额度）
+seedream replay last --run       # 真跑；结果记为一条新任务，并标注 replayed_from
 ```
 
-> **重要：不要直接使用 Read 工具读取 session.json 文件。** 图片以 base64 格式嵌入其中，文件通常有几 MB 甚至更大，可能导致读取失败。请始终使用 `session summary` 命令来获取信息。
+> - **失败的任务同样保存了输入**，可以直接复现或改参数重跑。
+> - `replay` 发送的是记录里**已经换算过**的提示词，不会二次换算坐标。
+> - 不要直接 `Read` 记录目录里的图片 base64 —— 用 `show --json` / `ls --json`。
 
-### 编辑模板匹配
+## 编辑模板匹配
 
-agent 读取 session 后，根据 `user_intent` 的关键词自动匹配编辑模板：
+根据用户意图关键词匹配编辑模板，把模板结构套进 `seedream edit` 的指令：
+
+按用户的编辑意图关键词自动匹配编辑模板：
 
 | 用户意图关键词 | 匹配模板 |
 |---------------|---------|
@@ -770,7 +769,7 @@ references/
 2. **读取模板**：理解 JSON 结构、参数策略（must-ask/defaultable/randomizable）和 constraints
 3. **收集信息**：按模板中「缺失信息优先提问顺序」向用户提问核心参数
 4. **展开 prompt**：将 JSON 展开为丰富自然语言 prompt，覆盖 6 个必要维度
-5. **展示确认 → 执行**：用户确认后调用 `seedream generate`
+5. **展示确认 → 执行**：用户确认后调用 `seedream draw`（改图用 `seedream edit`）
 
 模板中的 `{argument name="..." default="..."}` 是参数占位符：
 - **核心参数（must-ask）**：缺失必问用户，如主体是谁、商品是什么
@@ -806,7 +805,7 @@ references/
 然后执行：
 
 ```bash
-seedream generate -p "生成一张高仿真的直播带货截图风格视觉图..." --size 2K
+seedream draw "生成一张高仿真的直播带货截图风格视觉图..." --size 2K
 ```
 
 ## 提示词技巧
@@ -852,34 +851,13 @@ seedream generate -p "生成一张高仿真的直播带货截图风格视觉图.
 
 ### 目录结构
 
-生成结果按会话类型组织，统一保存在 `.seedream/` 目录下：
-
-```
-.seedream/
-├── edit/<session_id>/          # 交互编辑会话（WebUI）
-│   ├── session.json            # 编辑状态、标注、图片(base64)
-│   └── output/                 # 生成输出
-│       ├── <uuid>.png/jpg          # 生成图片
-│       ├── <uuid>.md               # 元数据
-│       ├── <hash>.png/jpg          # 参考图（哈希值命名）
-│       └── ...
-└── mark/                       # mark 标记预览（agent 核对坐标用）
-    └── <id>.png
-└── generate/<session_id>/      # 普通生成会话（CLI 文生图/图生图/图层拆分）
-    ├── session.json            # 生成状态、参数、输出记录
-    └── output/
-        ├── <uuid>.png/jpg                  # 普通生成：单图或多图
-        ├── <uuid>-L00.jpg                  # 图层拆分：底图（z_index=0）
-        ├── <uuid>-L01-<图层名>.png          # 图层拆分：图层（恒为 png，文件名带 z_index 与图层名）
-        ├── <uuid>-L02-<图层名>.png
-        ├── <uuid>.md                       # 元数据（含 z_index / 名称 / 描述 / bounding_box）
-        └── ...
-```
+生成结果保存在**数据根目录**的 `runs/<任务id>/` 下（每次生成一个目录），完整结构见上方
+「生成记录与复用」章节。
 
 ## 常见问题
 
 ### Q: 图片保存在哪里？
-A: `.seedream/generate/<session_id>/output/`（文生图/图生图/图层拆分）或 `.seedream/edit/<session_id>/output/`（交互编辑）。
+A: 数据根目录（默认是当前工作目录下的 `.seedream/`）的 `runs/<任务id>/outputs/`。用 `seedream ls` 列出全部任务、`seedream show last` 看最近一次。
 
 ### Q: 最多能传多少张参考图？
 A: 最多 10 张。图层拆分场景仅允许 1 张。
@@ -897,3 +875,12 @@ A: 任一图层生成失败会整体报错，不会返回部分结果。若提�
 
 ### Q: 提示词模板怎么用？
 A: 参考上方「提示词模板」章节：匹配模板 → 读取模板 → 收集信息 → 展开 prompt → 执行。
+
+### Q: 怎么找到之前生成的图？想改之前那张图怎么办？
+A: `seedream ls` 列出全部任务 → `seedream show <id>` 看提示词、参考图与产物 →
+再用 `seedream edit "..." --images <该任务的输入图副本>` 继续加工。
+想原样重跑一次用 `seedream replay <id> --run`（不加 `--run` 只预演、不消耗额度）。
+
+### Q: 生成失败了，输入还在吗？
+A: 在。参考图在**发请求之前**就已落盘到该任务的 `inputs/`，失败的记录同样进索引（`status=error`），
+可以直接 `replay` 或改参数重跑。

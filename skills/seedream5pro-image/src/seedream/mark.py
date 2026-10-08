@@ -32,7 +32,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .config import DEFAULT_OUTPUT_DIR, PREVIEW_MAX_BYTES
+from .config import PREVIEW_MAX_BYTES, resolve_home
 
 # 与 WebUI 保持同一套配色（src/seedream/static/app.js: ANNOTATION_COLORS）
 PALETTE: list[str] = [
@@ -538,7 +538,7 @@ def render_preview(
             *[f"#{i} {m.fragment()} {m.label}" for i, m in enumerate(render_marks, 1)])
 
     if output_path is None:
-        output_dir = Path(DEFAULT_OUTPUT_DIR) / "mark"
+        output_dir = resolve_home() / "mark"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = str(output_dir / f"{uuid.uuid4().hex[:12]}.jpg")
     else:

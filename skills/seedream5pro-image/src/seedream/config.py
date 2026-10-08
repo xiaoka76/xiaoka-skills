@@ -7,6 +7,7 @@ Seedream 5.0 Pro - 配置常量
 import os
 import re
 from datetime import datetime
+from pathlib import Path
 
 # ── 模型配置 ──────────────────────────────────────────────────────────────────
 
@@ -34,7 +35,46 @@ API_BASE: str = re.sub(
     ).rstrip("/"),
 )
 
-DEFAULT_OUTPUT_DIR: str = ".seedream"
+# ── 数据根目录 ────────────────────────────────────────────────────────────────
+# 解析顺序：$SEEDREAM_HOME（显式指定）> 当前工作目录/.seedream
+#
+# 为什么不放 ~/.seedream：多个 agent 可能共用一个容器与同一个 /root，
+# 家目录会让它们的产物混住；而 cwd 是每个 agent 自己的工作区，天然隔离。
+# 需要集中存放时用 SEEDREAM_HOME 显式指定即可。
+
+HOME_DIRNAME: str = ".seedream"
+
+# 子目录名（与 runs_dir() / index_path() 配套，测试与文档会引用）
+RUNS_DIRNAME: str = "runs"
+INDEX_FILENAME: str = "index.jsonl"
+
+
+def resolve_home() -> Path:
+    """
+    返回数据根目录。
+
+    :return: ``$SEEDREAM_HOME`` 解析后的绝对路径；未设置时为 ``cwd/.seedream``
+    """
+    override = os.getenv("SEEDREAM_HOME")
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path.cwd() / HOME_DIRNAME
+
+
+def runs_dir() -> Path:
+    """返回存放各次生成任务的目录：``<home>/runs``。"""
+    return resolve_home() / RUNS_DIRNAME
+
+
+def index_path() -> Path:
+    """返回任务索引文件路径：``<home>/index.jsonl``（append-only，一行一条）。"""
+    return resolve_home() / INDEX_FILENAME
+
+
+def ensure_home() -> Path:
+    """确保根目录与 runs 目录存在，返回根目录。"""
+    runs_dir().mkdir(parents=True, exist_ok=True)
+    return resolve_home()
 
 SUPPORTED_IMAGE_FORMATS: set[str] = {
     "jpeg", "png", "webp", "bmp", "tiff", "gif", "heic", "heif",

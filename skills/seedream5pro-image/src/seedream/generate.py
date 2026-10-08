@@ -2,7 +2,8 @@
 Seedream 5.0 Pro - 图像生成核心函数模块
 
 提供文生图、图生图、交互编辑的纯函数接口，不包含 CLI 代码。
-供外部模块（如 CLI 脚本、Web UI）导入使用。
+任务记录（run.json / inputs / outputs）由 :mod:`seedream.run` 负责，
+本模块只负责"把请求发出去、把产物落盘"。
 """
 
 import base64
@@ -17,9 +18,7 @@ import httpx
 from .config import (
     API_BASE,
     API_KEY,
-    DEFAULT_OUTPUT_DIR,
     IMAGE_FORMAT_MAP,
-    MAX_LAYERS,
     MAX_REF_ASPECT,
     MAX_REF_BYTES,
     MAX_REF_IMAGES,
@@ -27,8 +26,6 @@ from .config import (
     MIN_REF_EDGE,
     MIN_REF_PIXELS,
     MODEL_ID,
-    ref_label,
-    timestamp,
 )
 
 # ── 共享 HTTP 客户端（连接池复用）──────────────────────────────────────────────
@@ -319,45 +316,6 @@ def _resolve_image_path(path: str) -> str:
     return f"data:image/{img_format};base64,{b64_data}"
 
 
-def _save_ref_images(ref_images: str | list[str], output_dir: str) -> list[dict[str, str]]:
-    """
-    将参考图以哈希值为文件名保存到输出目录。
-
-    :param ref_images: 参考图 data URL 或 URL 列表
-    :param output_dir: 输出目录
-    :return: 参考图信息列表，每项包含 {index, path, label}
-    """
-    # 格式名 -> 文件扩展名（jpeg 统一使用 .jpg，其余保留原始格式扩展名）
-    fmt_to_ext: dict[str, str] = {
-        "jpeg": "jpg", "png": "png", "webp": "webp", "bmp": "bmp",
-        "tiff": "tif", "gif": "gif", "heic": "heic", "heif": "heif",
-    }
-    saved: list[dict[str, str]] = []
-    refs = ref_images if isinstance(ref_images, list) else [ref_images]
-    for i, ref in enumerate(refs):
-        if not ref.startswith("data:image/"):
-            # 网络 URL 只记录链接
-            saved.append({"index": str(i + 1), "path": ref, "label": ref})
-            continue
-        try:
-            header, b64_data = ref.split(",", 1)
-            fmt = header.split(";")[0].split("/")[1]  # png, jpeg, webp 等
-            img_data = base64.b64decode(b64_data)
-            h = hashlib.md5(img_data).hexdigest()[:12]
-            ext = fmt_to_ext.get(fmt, fmt)
-            local_path = os.path.join(output_dir, f"{h}.{ext}")
-            with open(local_path, "wb") as f:
-                f.write(img_data)
-            saved.append({
-                "index": str(i + 1),
-                "path": os.path.abspath(local_path),
-                "label": f"[Base64] {fmt}, ~{len(img_data) / 1024:.0f} KB",
-            })
-        except (ValueError, IndexError, base64.Error):
-            saved.append({"index": str(i + 1), "path": "", "label": ref_label(ref)})
-    return saved
-
-
 def _slugify(text: str, max_len: int = 24) -> str:
     """将图层名称转为安全的文件名片段（保留中英文与数字，其余转 -）。"""
     slug = re.sub(r"[^\w\u4e00-\u9fff]+", "-", text).strip("-")
@@ -397,92 +355,13 @@ def bbox_base_to_input(
     ]
 
 
-def _save_metadata(
-    item: dict,
-    records: list[dict],
-    output_dir: str,
-    filename: str,
-) -> str:
-    """将生成参数和结果保存为同名 .md 元数据文件。
-
-    :param item: 生成任务参数
-    :param records: 输出记录列表，每项含 path / z_index / name / description /
-        bounding_box / output_format / size
-    :param output_dir: 输出目录
-    :param filename: 文件名前缀（不含扩展名）
-    :return: 元数据文件绝对路径
-    """
-    lines: list[str] = [
-        "# 图像生成元数据",
-        "",
-        f"- **生成时间**: {timestamp()}",
-        f"- **模型**: {MODEL_ID}",
-        f"- **提示词**: {item.get('prompt', '')}",
-        f"- **尺寸**: {item.get('size', '2K')}",
-        f"- **输出格式**: {item.get('output_format', 'jpeg')}",
-        f"- **水印**: {'开启' if item.get('watermark') else '关闭'}",
-        f"- **优化模式**: {item.get('optimize_prompt_options', {}).get('mode', 'standard')}",
-    ]
-    if item.get("prompt_raw") and item.get("prompt_raw") != item.get("prompt"):
-        lines.append(f"- **原始提示词（像素标签，已由 CLI 换算）**: {item['prompt_raw']}")
-    if item.get("layer_decomposition"):
-        lines.append(f"- **图层拆分**: 开启（1 底图 + 最多 {MAX_LAYERS} 图层）")
-    if item.get("background") == "transparent":
-        lines.append("- **背景**: transparent（透明通道）")
-    ref_images = item.get("image")
-    if ref_images:
-        lines.append("")
-        lines.append("## 参考图")
-        ref_info_list = _save_ref_images(ref_images, output_dir)
-        for info in ref_info_list:
-            if info["path"]:
-                lines.append(f"- [{info['index']}] `{info['path']}` ({info['label']})")
-            else:
-                lines.append(f"- [{info['index']}] {info['label']}")
-    lines.extend([
-        "",
-        "## 输出文件",
-    ])
-    for rec in records:
-        meta = "，".join(p for p in (rec.get("size"), rec.get("output_format")) if p)
-        meta_str = f"（{meta}）" if meta else ""
-        z_index = rec.get("z_index")
-        if z_index is None:
-            lines.append(f"- 图片: `{rec['path']}`{meta_str}")
-        elif z_index == 0:
-            lines.append(f"- 底图 [z_index=0]: `{rec['path']}`{meta_str}")
-        else:
-            name = rec.get("name") or ""
-            head = f"- 图层 {z_index} [z_index={z_index}]"
-            if name:
-                head += f" `{name}`"
-            lines.append(f"{head}: `{rec['path']}`{meta_str}")
-            description = rec.get("description") or ""
-            if description:
-                lines.append(f"  - 描述: {description}")
-            if rec.get("bbox_pixel"):
-                lines.append(f"  - bbox 原图像素: {rec['bbox_pixel']}")
-                lines.append(f"  - **可直接写进 prompt 的标签（像素）**: `{rec['prompt_fragment']}`")
-            if rec.get("bbox_base"):
-                lines.append(f"  - bbox 底图坐标系原值（{rec['bbox_base_size']}）: {rec['bbox_base']}")
-            if rec.get("bbox_note"):
-                lines.append(f"  - 注意: {rec['bbox_note']}")
-    lines.append(f"- 元数据: `{os.path.join(os.path.abspath(output_dir), filename)}.md`")
-    lines.append("")
-
-    path = os.path.join(output_dir, f"{filename}.md")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
-    return os.path.abspath(path)
-
-
 # ── 核心生成函数 ──────────────────────────────────────────────────────────────
 
 
 def single_generate(
     item: dict,
+    output_dir: str,
     timeout: int = 300,
-    output_dir: str = DEFAULT_OUTPUT_DIR,
 ) -> dict:
     """
     执行一次图像生成（文生图 / 图生图 / 交互编辑 / 图层拆分）。
@@ -496,13 +375,13 @@ def single_generate(
         - optimize_prompt_options (dict, 可选): 提示词优化配置
         - layer_decomposition (bool, 可选): 图层拆分开关（仅支持单张输入图）
         - background (str, 可选): "transparent" 或 "opaque"
+    :param output_dir: 产物保存目录（通常是 run 目录下的 outputs/）
     :param timeout: API 超时秒数
-    :param output_dir: 图片保存目录
     :return: 结果字典
         - status: "success" | "error"
         - image_path: 本地路径（图层拆分场景为底图） | None
-        - metadata_path: 本地路径 | None
         - all_images: 全部输出图的本地路径列表
+        - records: 每张产物的记录（含 size / output_format / z_index / 图层信息）
         - layers: 图层拆分场景下的输出记录（含 z_index / name / bounding_box）
         - model: 模型 ID
         - output_dir: 目录路径
@@ -522,7 +401,6 @@ def single_generate(
             return {
                 "status": "error",
                 "image_path": None,
-                "metadata_path": None,
                 "model": MODEL_ID,
                 "output_dir": os.path.abspath(output_dir),
                 "error": str(response["error"]),
@@ -533,7 +411,6 @@ def single_generate(
             return {
                 "status": "error",
                 "image_path": None,
-                "metadata_path": None,
                 "model": MODEL_ID,
                 "output_dir": os.path.abspath(output_dir),
                 "error": "API 返回空数据",
@@ -606,12 +483,11 @@ def single_generate(
                                     "改用本地图片路径即可获得可直接粘贴的 <bbox>"
                                 )
             results = [r["path"] for r in records]
-            metadata_path = _save_metadata(item, records, output_dir, uid)
             return {
                 "status": "success",
                 "image_path": results[0],  # 单图场景返回第一张；图层场景返回底图
-                "metadata_path": metadata_path,
                 "all_images": results,
+                "records": records,
                 "layers": records if is_layer_mode else [],
                 "uid": uid,
                 "model": MODEL_ID,
@@ -622,7 +498,6 @@ def single_generate(
             return {
                 "status": "error",
                 "image_path": None,
-                "metadata_path": None,
                 "model": MODEL_ID,
                 "output_dir": os.path.abspath(output_dir),
                 "error": "生成失败：所有图片数据均为空",
@@ -632,7 +507,6 @@ def single_generate(
         return {
             "status": "error",
             "image_path": None,
-            "metadata_path": None,
             "model": MODEL_ID,
             "output_dir": os.path.abspath(output_dir),
             "error": str(e),
@@ -641,7 +515,6 @@ def single_generate(
         return {
             "status": "error",
             "image_path": None,
-            "metadata_path": None,
             "model": MODEL_ID,
             "output_dir": os.path.abspath(output_dir),
             "error": f"网络请求失败: {e}",
@@ -650,7 +523,6 @@ def single_generate(
         return {
             "status": "error",
             "image_path": None,
-            "metadata_path": None,
             "model": MODEL_ID,
             "output_dir": os.path.abspath(output_dir),
             "error": f"{type(e).__name__}: {e}",

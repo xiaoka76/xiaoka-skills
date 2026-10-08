@@ -1,15 +1,11 @@
 [project]
 name = "seedream"
-version = "2.4.0"
-description = "Seedream 5.0 Pro 图像生成 CLI - 文生图/图生图/交互编辑/图层拆分/透明背景"
+version = "3.0.0"
+description = "Seedream 5.0 Pro 图像生成 CLI - 文生图/图生图/图层拆分/透明背景/标记预览，自动保存可复用的生成记录"
 requires-python = ">=3.12"
 dependencies = [
     "typer>=0.12",
-    "fastapi>=0.115",
-    "uvicorn>=0.34",
     "httpx>=0.28",
-    "pydantic>=2.0",
-    "python-multipart>=0.0.18",
     "annotated-doc>=0.0.4",
     "pillow>=10",
 ]
@@ -23,8 +19,3 @@ seedream = "seedream.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-"seedream" = ["static/*"]
-
-[tool.uv.sources]
