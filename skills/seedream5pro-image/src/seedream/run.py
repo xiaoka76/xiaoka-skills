@@ -229,11 +229,18 @@ def read_index(limit: int | None = None) -> list[dict]:
             latest[rid] = entry
     entries = [latest[rid] for rid in order]
     entries.reverse()
+    alive: list[dict] = []
     for entry in entries:
-        entry["dir"] = str(runs_dir() / entry["run_id"])
+        directory = runs_dir() / entry["run_id"]
+        # 索引是 append-only 的：任务目录被外部删掉（例如手工清理）后，索引里会留下幽灵条目。
+        # 这里以**磁盘为准**跳过它，否则 `ls` 会列出一堆 `show` 打不开的记录。
+        if not directory.is_dir():
+            continue
+        entry["dir"] = str(directory)
+        alive.append(entry)
     if limit is not None:
-        return entries[:limit]
-    return entries
+        return alive[:limit]
+    return alive
 
 
 def list_legacy_runs() -> list[dict]:
