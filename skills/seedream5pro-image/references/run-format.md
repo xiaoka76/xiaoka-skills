@@ -6,7 +6,7 @@
 <数据根>/
 ├── index.jsonl                     # 一行一条任务摘要，append-only，ls 直接读它
 ├── runs/
-│   └── 20261008-143022-a1b2/       # run id = YYYYMMDD-HHMMSS-<4位随机>
+│   └── 20261008-143022-a1b2c3/       # run id = YYYYMMDD-HHMMSS-<6位随机>
 │       ├── run.json                # 唯一真相
 │       ├── inputs/                 # 参考图副本（sha256 前 12 位命名）
 │       └── outputs/                # 产物
@@ -19,7 +19,7 @@
 
 ```json
 {
-  "run_id": "20261008-143022-a1b2",
+  "run_id": "20261008-143022-a1b2c3",
   "kind": "edit",
   "created_at": "2026-10-08T14:30:22",
   "finished_at": "2026-10-08T14:30:51",
@@ -39,7 +39,7 @@
   "inputs": [
     {
       "source": "/home/me/photo.png",
-      "path": "/.../runs/20261008-143022-a1b2/inputs/5be509078f9e.png",
+      "path": "/.../runs/20261008-143022-a1b2c3/inputs/5be509078f9e.png",
       "sha256": "5be509078f9e...(64 位)",
       "size": 590399,
       "width": 1664,
@@ -50,7 +50,7 @@
   "outputs": [
     {
       "index": 1,
-      "path": "/.../runs/20261008-143022-a1b2/outputs/3aa9a7aa925a.png",
+      "path": "/.../runs/20261008-143022-a1b2c3/outputs/3aa9a7aa925a.png",
       "size": "1664x2496",
       "output_format": "png",
       "z_index": null,
@@ -96,7 +96,7 @@
 每完成一次任务追加一行（同一 run 出现多次时以最后一行为准），供 `seedream ls` 快速读取：
 
 ```json
-{"run_id": "20261008-143022-a1b2", "kind": "edit", "status": "success",
+{"run_id": "20261008-143022-a1b2c3", "kind": "edit", "status": "success",
  "created_at": "2026-10-08T14:30:22", "prompt": "将图1<bbox>180 497 367 637</bbox>…",
  "inputs": 1, "outputs": 1}
 ```

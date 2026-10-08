@@ -35,6 +35,10 @@ _NUMERIC_BODY = re.compile(r"^[\s\d,;，、+\-\.]+$")
 # 坐标标签的合法名称
 _COORD_NAMES: tuple[str, ...] = ("point", "bbox")
 
+# 「高置信」标签名：只有严格等于这些，才够格在**没有参考图**时把请求拦下来。
+# 放宽到这个白名单之外（如 checkbox / mybox / pointing）会把正常的文生图提示词误杀。
+_STRICT_NAMES: tuple[str, ...] = ("point", "bbox", "box")
+
 # 标签前的图片指示：「图1」「图片 2」「第3张」「image1」
 _IMAGE_REF = re.compile(r"(?:图片|图|第|image)\s*([0-9０-９]+)")
 
@@ -99,14 +103,14 @@ def _edit_distance(a: str, b: str) -> int:
 
 
 def _looks_like_coord_name(name: str) -> bool:
-    """判断标签名是否「本来想写 point / bbox」。"""
+    """判断标签名是否「疑似坐标标签名」（宽松口径：只用于提示，不用于拦截）。"""
     low = name.lower().strip()
-    if low in _COORD_NAMES:
+    if low in _STRICT_NAMES:
         return True
     if any(key in low for key in ("point", "box")):
         return True
-    # 近形笔误（含转置，如 boox / piont）：限 3~8 字符，避免把 <bx>、<b> 这类短名误判
-    return 3 <= len(low) <= 8 and any(_edit_distance(low, t) <= 2 for t in _COORD_NAMES)
+    # 近形笔误（含转置，如 boox / piont）：限 3~6 字符，避免把 <3>、<bx> 这类短名误判
+    return 3 <= len(low) <= 6 and any(_edit_distance(low, t) <= 2 for t in _COORD_NAMES)
 
 
 def _looks_like_typo(name: str) -> bool:
@@ -114,40 +118,58 @@ def _looks_like_typo(name: str) -> bool:
     return _looks_like_coord_name(name) and name.lower().strip() not in _COORD_NAMES
 
 
-def _coordinate_candidates(prompt: str) -> list[tuple[str, str]]:
-    """列出 prompt 里**本来想写坐标标签**的片段。
+def _numeric_token_count(text: str) -> int:
+    """统计"坐标式"整数的个数：纯数字 + 分隔符，且每个 token 都是整数。
 
-    普通文本里的尖括号（``<重点>``、``<div>``、``<3爱心>``）不应被当成坐标标签——
-    否则文生图提示词会被硬生生拒掉（审查修复）。只认两种情况：
-    1. 名称是 point / bbox 或其近形笔误（含未闭合的单个 ``<bbox>``）
-    2. 标签内容/标签体是纯数字 + 分隔符（``<boox>1 2 3 4</boox>``、``<120 180 640 760>``）
-
-    :return: ``[(可展示的片段, 标签名), ...]``
+    单个数字（``<3>``、``<1.5>``）不算坐标——坐标标签至少要有 2 个值（点选）或 4 个（框选）。
+    不这样收窄的话，``版本号<3>``、``评分<1.5>`` 这类正常提示词会被误判成坐标标签。
     """
-    found: list[tuple[str, str]] = []
+    body = _SEPARATORS.sub(" ", text).strip()
+    if not body or not _NUMERIC_BODY.match(body):
+        return 0
+    return len([t for t in body.split() if _INT.match(t)])
+
+
+def _coordinate_candidates(prompt: str) -> list[tuple[str, str, bool]]:
+    """列出 prompt 里**本来想写坐标标签**的片段，并给出置信度。
+
+    普通文本里的尖括号（``<重点>``、``<div>``、``<checkbox>``、``<3爱心>``）不应被当成
+    坐标标签——否则文生图提示词会被硬生生拒掉（审查修复）。
+
+    - **高置信**（第三项为 True）：名称严格是 ``point`` / ``bbox`` / ``box``，或标签体 /
+      尖括号内容是纯数字。**只有高置信才够格在「没有参考图」时把请求拦下来。**
+    - 低置信：仅名称近似（如 ``<boox>``、``<mybox>``）——只提示、不拦截，避免误杀正常提示词。
+
+    :return: ``[(可展示的片段, 标签名, 是否高置信), ...]``
+    """
+    found: list[tuple[str, str, bool]] = []
     seen: set[str] = set()
 
     # 形态一：<名称> 后面跟标签体
     for match in _TAG_START.finditer(prompt):
         name = match.group("name")
         body = match.group("body").strip()
-        if not (_looks_like_coord_name(name) or (body and _NUMERIC_BODY.match(body))):
+        numeric = _numeric_token_count(body) >= 2
+        strict = name.lower().strip() in _STRICT_NAMES
+        if not (strict or numeric or _looks_like_coord_name(name)):
             continue
         tag = f"<{name}>"
-        if tag not in seen:
-            seen.add(tag)
-            found.append((tag, name))
+        if tag in seen:
+            continue
+        seen.add(tag)
+        found.append((tag, name, strict or numeric))
 
     # 形态二：整个尖括号内容就是坐标（<120 180 640 760>）
     for match in _ANY_TAG.finditer(prompt):
         snippet = match.group(0)
         inner = snippet.strip("<>").strip()
-        if not (inner and _NUMERIC_BODY.match(inner)) or snippet in seen:
+        if _numeric_token_count(inner) < 2 or snippet in seen:
             continue
         seen.add(snippet)
-        found.append((snippet, inner.split()[0]))
+        found.append((snippet, inner.split()[0], True))
 
     return found
+
 
 
 def convert_prompt_tags(
@@ -167,7 +189,11 @@ def convert_prompt_tags(
 
     # 只有"确实想写坐标标签"的片段才算标签：普通尖括号文本（<重点>/<div>）不算，
     # 否则文生图提示词里出现尖括号就会被误判成"有标签却没参考图"而直接报错
-    has_tag = bool(_PAIRED_TAG.search(prompt)) or bool(_coordinate_candidates(prompt))
+    # 只有**高置信**（名称严格是 point/bbox/box，或内容是纯数字）才拦下来；
+    # 只是名字长得像（<checkbox>/<mybox>/<pointing>）不拦，否则会误杀正常的文生图提示词
+    has_tag = bool(_PAIRED_TAG.search(prompt)) or any(
+        confident for _, _, confident in _coordinate_candidates(prompt)
+    )
     if has_tag and not image_sizes:
         result.issues.append(TagIssue(
             "error",
@@ -293,7 +319,7 @@ def convert_prompt_tags(
 
     # ── 配对之外的可疑片段（只在残留文本里找，且只认"确实想写坐标标签"的片段）──
     seen: set[str] = set()
-    for snippet, name_seen in _coordinate_candidates("".join(residual)):
+    for snippet, name_seen, _ in _coordinate_candidates("".join(residual)):
         if name_seen in seen:       # 同一处笔误（开/闭标签各出现一次）只报一次
             continue
         seen.add(name_seen)

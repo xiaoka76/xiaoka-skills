@@ -199,8 +199,9 @@ def _download_image(url: str, output_dir: str, filename: str, ext: str) -> str:
     """
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"{filename}.{ext}")
-    client = _get_client(120.0)
-    resp = client.get(url)
+    # 超时按请求传，与 _call_api 一致 —— 不改写共享 client 的状态
+    client = _get_client()
+    resp = client.get(url, timeout=httpx.Timeout(120.0))
     resp.raise_for_status()
     with open(path, "wb") as f:
         f.write(resp.content)

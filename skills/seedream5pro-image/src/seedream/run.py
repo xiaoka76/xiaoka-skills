@@ -41,7 +41,8 @@ from .generate import probe_image_size
 RUN_KINDS: tuple[str, ...] = ("draw", "edit", "split", "cutout")
 
 # run id 形态：YYYYMMDD-HHMMSS-<6 位随机十六进制>
-RUN_ID_RE: re.Pattern[str] = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{6}$")
+# 随机位为 6；放宽到 4~8 是为了让「索引缺失」回退扫描也能认出更早/更晚格式的目录
+RUN_ID_RE: re.Pattern[str] = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4,8}$")
 
 _VALID_STATUS: set[str] = {"pending", "running", "success", "error"}
 
