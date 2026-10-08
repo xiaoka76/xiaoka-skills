@@ -32,8 +32,9 @@ from seedream.config import (
     resolve_home,
 )
 from seedream.generate import (
-    resolve_image_path,
+    check_layer_decomposition_limits,
     probe_image_size,
+    resolve_image_path,
     single_generate,
 )
 from seedream.run import (
@@ -239,6 +240,10 @@ def _execute(
     for ref in images:
         try:
             resolved.append(resolve_image_path(ref))
+            # 图层拆分比普通图生图更严（格式仅 png/jpeg、总像素 ≥512x512）：本地先拦，
+            # 否则要等接口报错才知道。URL / data URI 读不到本地尺寸，跳过交给接口判断。
+            if layer_decomposition and not ref.startswith(("http://", "https://", "data:image/")):
+                check_layer_decomposition_limits(ref)
         except (FileNotFoundError, ValueError) as e:
             typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1)

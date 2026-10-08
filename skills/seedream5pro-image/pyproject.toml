@@ -1,6 +1,6 @@
 [project]
 name = "seedream"
-version = "3.0.0"
+version = "3.0.1"
 description = "Seedream 5.0 Pro 图像生成 CLI - 文生图/图生图/图层拆分/透明背景/标记预览，自动保存可复用的生成记录"
 requires-python = ">=3.11"
 dependencies = [

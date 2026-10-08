@@ -19,6 +19,8 @@ from .config import (
     API_BASE,
     API_KEY,
     IMAGE_FORMAT_MAP,
+    LAYER_ALLOWED_FORMATS,
+    MIN_LAYER_PIXELS,
     MAX_REF_ASPECT,
     MAX_REF_BYTES,
     MAX_REF_IMAGES,
@@ -271,6 +273,51 @@ def _check_reference_limits(path: str) -> None:
         new_w, new_h = suggest_reference_size(width, height)
         raise ValueError(
             f"参考图总像素超限: {path}（{width}x{height} = {pixels / 10000:.0f} 万像素，"
+            f"上限 {MAX_REF_PIXELS // 10000} 万像素）。"
+            f"建议先等比缩放到 {new_w}x{new_h} 再传入——这一步交给你决定，不会自动改图"
+        )
+
+
+def suggest_layer_scale_up(width: int, height: int) -> tuple[int, int]:
+    """给出把图片放大到图层拆分下限之上的建议尺寸（等比放大）。"""
+    ratio = (MIN_LAYER_PIXELS / (width * height)) ** 0.5
+    return max(MIN_REF_EDGE + 1, round(width * ratio)), max(MIN_REF_EDGE + 1, round(height * ratio))
+
+
+def check_layer_decomposition_limits(path: str) -> None:
+    """校验本地图片是否满足**图层拆分**对输入图的专属限制。
+
+    官方对图层拆分比对普通图生图更严：格式仅 ``png`` / ``jpeg``，总像素
+    ``[512×512, 6000×6000]``。不先拦的话，小图/别的格式要等接口报错才知道。
+
+    读不出尺寸（缺 Pillow / 格式不支持）时跳过像素校验，交给接口判断。
+
+    :param path: 本地图片路径
+    :raises ValueError: 不满足图层拆分限制
+    """
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in LAYER_ALLOWED_FORMATS:
+        raise ValueError(
+            f"图层拆分仅支持 png / jpeg 输入: {path}（当前 {ext or '无扩展名'}）。"
+            f"请先转成 png 再传入"
+        )
+
+    dims = probe_image_size(path)
+    if dims is None:
+        return
+    width, height = dims
+    pixels = width * height
+    if pixels < MIN_LAYER_PIXELS:
+        new_w, new_h = suggest_layer_scale_up(width, height)
+        raise ValueError(
+            f"图层拆分要求输入图总像素 ≥ {MIN_LAYER_PIXELS}（512x512）: "
+            f"{path}（{width}x{height} = {pixels / 10000:.1f} 万像素，不足）。"
+            f"建议先等比放大到 {new_w}x{new_h} 再传入——这一步交给你决定，不会自动改图"
+        )
+    if pixels > MAX_REF_PIXELS:
+        new_w, new_h = suggest_reference_size(width, height)
+        raise ValueError(
+            f"图层拆分输入图总像素超限: {path}（{width}x{height} = {pixels / 10000:.0f} 万像素，"
             f"上限 {MAX_REF_PIXELS // 10000} 万像素）。"
             f"建议先等比缩放到 {new_w}x{new_h} 再传入——这一步交给你决定，不会自动改图"
         )

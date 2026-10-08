@@ -99,6 +99,11 @@ SIZE_TIERS: set[str] = {"1K", "1.5K", "2K"}
 # 单张输入图可拆解为 1 张底图（z_index=0）+ 最多 MAX_LAYERS 个图层（png，带透明通道）
 MAX_LAYERS: int = 16
 
+# 图层拆分对**输入图**的专属限制（官方《图片生成 API》），比通用图生图更严：
+# 格式仅 png / jpeg，总像素 [512×512, 6000×6000]（上限与 MAX_REF_PIXELS 相同）
+LAYER_ALLOWED_FORMATS: set[str] = {".png", ".jpg", ".jpeg"}
+MIN_LAYER_PIXELS: int = 512 * 512   # 262_144
+
 # 透明背景模式仅支持带透明通道的输入图，这些格式天然不含 alpha 通道
 ALPHA_LESS_FORMATS: set[str] = {".jpg", ".jpeg"}
 
