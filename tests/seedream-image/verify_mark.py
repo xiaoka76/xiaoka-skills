@@ -3,7 +3,7 @@
 mark 是「先核对再提交」的工作流核心，坐标读数直接依赖它，所以做**像素级**断言：
 不只是"命令退出码为 0"，而是去量输出图里刻度与标签的实际位置。
 
-运行：  python3 tests/seedream5pro-image/verify_mark.py
+运行：  python3 tests/seedream-image/verify_mark.py
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PIL import Image
 
-REPO = Path(__file__).resolve().parents[2] / "skills/seedream5pro-image"
+REPO = Path(__file__).resolve().parents[2] / "skills/seedream-image"
 sys.path.insert(0, str(REPO / "src"))
 
 WORK = Path(__file__).resolve().parent / "work_mark"

@@ -11,13 +11,13 @@
 
 ```bash
 # ① 安装为全局工具（推荐）
-cd skills/seedream5pro-image && uv tool install . && seedream --help
+cd skills/seedream-image && uv tool install . && seedream --help
 
 # ② 用 uv run 直接运行
-cd skills/seedream5pro-image && uv run seedream --help
+cd skills/seedream-image && uv run seedream --help
 
 # ③ 安装依赖后在项目中使用
-cd skills/seedream5pro-image && pip install -e . && seedream --help
+cd skills/seedream-image && pip install -e . && seedream --help
 ```
 
 依赖：`Pillow`（用于 `mark` 绘制与参考图尺寸校验）；要求 Python ≥ 3.11。

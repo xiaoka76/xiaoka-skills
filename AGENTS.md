@@ -31,7 +31,7 @@ skills/<skill-name>/
 | 技能名称 | 描述 | 入口 |
 |----------|------|------|
 | `byted-web-search` | 火山引擎豆包搜索（Custom/Global 双引擎，含图搜图） | `python3 scripts/web_search.py` |
-| `seedream5pro-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/图层拆分/透明背景/标记预览/生成记录） | `seedream draw` · `edit` · `split` · `cutout` · `mark` · `ls` · `show` · `replay` |
+| `seedream-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/图层拆分/透明背景/标记预览/生成记录） | `seedream draw` · `edit` · `split` · `cutout` · `mark` · `ls` · `show` · `replay` |
 
 ## Agent 交互规则
 
@@ -40,7 +40,7 @@ skills/<skill-name>/
 当用户请求涉及以下领域时，Agent 应优先查找 `skills/` 下对应的技能目录：
 
 - **联网搜索** → `skills/byted-web-search/`（默认 Custom 版；海外/图搜图用 `--engine global`）
-- **图像生成** → `skills/seedream5pro-image/`
+- **图像生成** → `skills/seedream-image/`
 - 更多技能待添加
 
 ### 2. 技能清单 (`SKILL.md`)
@@ -55,7 +55,7 @@ Agent **必须**在执行任何技能操作前先读取 `SKILL.md`。
 
 ### 3. 知识库 (`references/`)
 
-`references/` 目录包含技能所需的知识库文档。当前 `seedream5pro-image` 技能内置 **17 类共 91 个提示词模板**，另有 3 份方法论文档。Agent 在执行任务时应当：
+`references/` 目录包含技能所需的知识库文档。当前 `seedream-image` 技能内置 **17 类共 91 个提示词模板**，另有 3 份方法论文档。Agent 在执行任务时应当：
 - **先看 `prompt-guide.md`**（官方《Seedream 4.0-5.0 提示词指南》要点：5 条通用规则 + 各场景官方范例）
 - 根据任务类型（如"学术配图"、"品牌海报"）选择对应分类的模板
 - 参考模板中的 JSON 结构构建提示词
@@ -72,7 +72,7 @@ Agent **必须**在执行任何技能操作前先读取 `SKILL.md`。
 - **复现**：`seedream replay <run_id>` **默认只预演、不消耗额度**，确认后加 `--run` 才真跑
 - **不要直接 Read 产物或记录文件**：产物是二进制图片；记录信息一律走 `show --json` / `ls --json`
 - **失败的任务同样保留输入**（`status=error`），可直接复现或改参数重跑
-- 完整字段见 `skills/seedream5pro-image/references/run-format.md`
+- 完整字段见 `skills/seedream-image/references/run-format.md`
 
 ### 5. 提示词策略
 
@@ -123,12 +123,12 @@ Agent 需根据任务类型选择不同的提示词策略：
 
 ```bash
 # 安装为全局工具（推荐）
-cd skills/seedream5pro-image
+cd skills/seedream-image
 uv tool install .
 seedream draw "一只橘色虎斑猫，毛发蓬松，翡翠绿眼睛，坐在洒满阳光的木质窗台上，窗外是秋天枫叶，写实摄影风格，暖金色侧光，中景构图，超精细8K" --size 2K
 
 # 或使用 uv run 直接运行
-cd skills/seedream5pro-image
+cd skills/seedream-image
 uv run seedream draw "一只橘色虎斑猫，毛发蓬松，翡翠绿眼睛，坐在洒满阳光的木质窗台上，窗外是秋天枫叶，写实摄影风格，暖金色侧光，中景构图，超精细8K" --size 2K
 
 # 需要设置 API Key（仅支持环境变量，不读取 .env 文件）

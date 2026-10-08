@@ -1,5 +1,5 @@
 ---
-name: seedream5pro-image
+name: seedream-image
 description: Seedream 5.0 Pro 专用图像生成技能。文生图 / 图生图 / 交互编辑（<point>/<bbox> 坐标精确定位）/ 图层拆分（1 底图 + 最多 16 个透明图层），支持透明背景。每次生成都会保存完整过程（提示词、参考图副本、参数、产物），可查询、可复现。内置 17 类提示词模板。使用该技能时：用户想画图、生成图片、改图、编辑图片、做海报/UI/产品图/插画/角色/地图/信息图/分镜等任何视觉内容，或需要高质量的 AI 图像生成能力，或需要把设计稿拆成可编辑图层 / 抠出透明背景素材。
 license: MIT
 tags: ["image-generation", "seedream-5.0-pro", "seedream", "volcengine", "text-to-image", "image-to-image", "interactive-edit", "layer-decomposition", "transparent-background", "local-save", "reproducible", "cli"]
@@ -42,7 +42,7 @@ version: 3.0.4
 ### 安装与环境变量
 
 ```bash
-cd skills/seedream5pro-image && uv tool install .   # 或 uv run seedream / pip install -e .
+cd skills/seedream-image && uv tool install .   # 或 uv run seedream / pip install -e .
 export ARK_API_KEY="..."                            # 必填
 export SEEDREAM_HOME="/path/to/data"                # 可选，记录存放根；默认 cwd/.seedream/
 ```

@@ -39,7 +39,7 @@ python3 scripts/web_search.py --engine global "同款商品" --type visual --ima
 
 ---
 
-### 图像生成 — `seedream5pro-image`
+### 图像生成 — `seedream-image`
 
 [Seedream 5.0 Pro](https://www.volcengine.com/product/doubao-seedream) 专用图像生成技能。支持文生图、图生图、交互编辑、图层拆分与透明背景，内置 17 类共 91 个提示词模板。
 
@@ -82,7 +82,7 @@ python3 scripts/web_search.py --engine global "同款商品" --type visual --ima
 
 ```bash
 # 进入技能目录
-cd skills/seedream5pro-image
+cd skills/seedream-image
 
 # 设置 API Key（仅支持环境变量，不读取 .env 文件）
 export ARK_API_KEY="your-api-key"
@@ -121,7 +121,7 @@ seedream mark ./photo.png --box 980,640,1180,860:手部 -o ./check.png
 seedream mark ./photo.png --box 980,640,1180,860 --plain -o ./marked.png
 ```
 
-详细用法请参阅 [SKILL.md](skills/seedream5pro-image/SKILL.md)。
+详细用法请参阅 [SKILL.md](skills/seedream-image/SKILL.md)。
 
 ---
 
@@ -131,7 +131,7 @@ seedream mark ./photo.png --box 980,640,1180,860 --plain -o ./marked.png
 xiaoka-skills/
 ├── skills/                  # 技能目录
 │   ├── byted-web-search/    # 火山引擎豆包搜索（Custom/Global 双引擎）
-│   └── seedream5pro-image/  # 图像生成技能
+│   └── seedream-image/  # 图像生成技能
 │       ├── SKILL.md         # 技能清单
 │       ├── pyproject.toml   # 包配置
 │       ├── src/seedream/    # 可安装的 Python 包

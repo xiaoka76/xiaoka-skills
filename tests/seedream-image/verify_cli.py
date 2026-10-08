@@ -3,7 +3,7 @@
 用真实的 CLI 子进程跑，只在 HTTP 边界上换成本地 mock —— 因此参数校验、落盘、
 run.json 组装、错误路径都是真代码在跑。**绝不调用真实接口。**
 
-运行：  python3 tests/seedream5pro-image/verify_cli.py
+运行：  python3 tests/seedream-image/verify_cli.py
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from PIL import Image
 
-REPO = Path(__file__).resolve().parents[2] / "skills/seedream5pro-image"
+REPO = Path(__file__).resolve().parents[2] / "skills/seedream-image"
 WORK = Path(__file__).resolve().parent / "work_cli"
 HOME = WORK / "home"
 

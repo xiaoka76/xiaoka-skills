@@ -1,6 +1,6 @@
 # JSON 提示词模板总规范
 
-本文件是 `seedream5pro-image` skill 的模板方法论总文档。后续所有具体模板文件都应尽量遵守这里的规则。
+本文件是 `seedream-image` skill 的模板方法论总文档。后续所有具体模板文件都应尽量遵守这里的规则。
 
 它不提供某个具体视觉场景的完整模板，而是定义：
 
@@ -710,7 +710,7 @@ references/
 
 参考案例来源目前主要是：
 
-- `skills/seedream5pro-image/references/` 下的模板文件
+- `skills/seedream-image/references/` 下的模板文件
 
 后续提炼模板时，严格按以下步骤：
 

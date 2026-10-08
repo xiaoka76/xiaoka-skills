@@ -1,11 +1,11 @@
-# seedream5pro-image 测试
+# seedream-image 测试
 
-## 为什么放在这里（而不是 `skills/seedream5pro-image/tests/`）
+## 为什么放在这里（而不是 `skills/seedream-image/tests/`）
 
 **放在技能目录里会被一起安装。** qwenpaw 安装技能时，`hub.py:_github_collect_tree_files()` 从
 `SKILL.md` 所在目录**递归收集全部文件**（不看扩展名、没有排除名单），`_normalize_bundle()` 再把
 `references/`、`scripts/` 以外的文件统统塞进 `extra_files` 兜底桶 —— 也就是说
-`skills/seedream5pro-image/` 下新增的任何东西都会被打进四个安装目标。
+`skills/seedream-image/` 下新增的任何东西都会被打进四个安装目标。
 
 更实际的理由：安装前的安全扫描有 **100 文件上限**（`scanner.py`，超出部分**根本不扫**）。
 技能目录**当前已 109 个文件**，早就越过上限；再往里塞测试只会让未被扫描的盲区更大。
@@ -22,12 +22,12 @@
 
 ```bash
 # 全跑（约 1~2 分钟）
-bash tests/seedream5pro-image/run_all.sh
+bash tests/seedream-image/run_all.sh
 
 # 或单独跑
-python3 tests/seedream5pro-image/verify_tags.py   # 标签引擎（纯函数，最快）
-python3 tests/seedream5pro-image/verify_cli.py    # 四个子命令 + 生成记录 + 校验
-python3 tests/seedream5pro-image/verify_mark.py   # mark 标记预览（像素级）
+python3 tests/seedream-image/verify_tags.py   # 标签引擎（纯函数，最快）
+python3 tests/seedream-image/verify_cli.py    # 四个子命令 + 生成记录 + 校验
+python3 tests/seedream-image/verify_mark.py   # mark 标记预览（像素级）
 ```
 
 依赖：Python ≥3.11、Pillow（`pip install pillow`）。退出码非 0 表示有失败项。

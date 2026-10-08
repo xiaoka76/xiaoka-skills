@@ -3,14 +3,14 @@
 坐标口径是这套技能最容易错的地方，所以这层守卫最密：
 agent 只写**原图像素**，转换由 CLI 在发请求前完成，且对外输出里不应出现归一化值。
 
-运行：  python3 tests/seedream5pro-image/verify_tags.py
+运行：  python3 tests/seedream-image/verify_tags.py
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2] / "skills/seedream5pro-image"
+REPO = Path(__file__).resolve().parents[2] / "skills/seedream-image"
 sys.path.insert(0, str(REPO / "src"))
 
 from seedream.mark import _grid_ticks                      # noqa: E402

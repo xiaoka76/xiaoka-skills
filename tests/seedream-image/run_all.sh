@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 一键跑 seedream5pro-image 的全部验收（零成本：不调用真实 API）
+# 一键跑 seedream-image 的全部验收（零成本：不调用真实 API）
 set -u
 cd "$(dirname "$0")"
 fail=0
