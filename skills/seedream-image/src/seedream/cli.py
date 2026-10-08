@@ -436,7 +436,7 @@ _TimeoutOpt = Annotated[int, typer.Option("--timeout", "-t", help="API 超时秒
 def draw(
     prompt: Annotated[str, typer.Argument(help="提示词（用连贯自然语言描述画面）")],
     size: _SizeOpt = "2K",
-    output_format: _FormatOpt = "png",
+    output_format: _FormatOpt = "jpeg",
     watermark: _WatermarkOpt = False,
     optimize: _OptimizeOpt = "standard",
     timeout: _TimeoutOpt = 300,
@@ -466,7 +466,7 @@ def edit(
     prompt: Annotated[str, typer.Argument(help="编辑指令（用「图1/图2」指代参考图；可内嵌 <bbox>…</bbox> 像素坐标标签）")],
     images: Annotated[list[str], typer.Option("--images", help="参考图（本地路径或 URL，可多次指定，最多 10 张）")],
     size: _SizeOpt = "2K",
-    output_format: _FormatOpt = "png",
+    output_format: _FormatOpt = "jpeg",
     watermark: _WatermarkOpt = False,
     optimize: _OptimizeOpt = "standard",
     timeout: _TimeoutOpt = 300,

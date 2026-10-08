@@ -122,6 +122,10 @@ def _build_request_body(item: dict) -> dict:
     ``response_format`` 默认 ``url``（链接 24 小时后失效）。CLI 一律显式覆盖这三项，
     因此在 CLI 这一层它们是"确定行为"，调用方（agent）无需知道接口默认值长什么样。
 
+    ``output_format`` 的 CLI 默认值与接口默认值**碰巧一致**（都是 ``jpeg``），但不要因此
+    省掉显式下发：``split`` 底图与 ``cutout`` 仍显式传 ``png``，一旦哪天接口默认值变动，
+    靠显式下发才能保证两条路径行为不变。
+
     :param item: 任务参数，包含 prompt、size、image 等字段
     :return: 发送给 API 的请求体字典
     """

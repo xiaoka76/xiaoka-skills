@@ -3,7 +3,7 @@ name: seedream-image
 description: Seedream 5.0 Pro 专用图像生成技能。文生图 / 图生图 / 交互编辑（<point>/<bbox> 坐标精确定位）/ 图层拆分（1 底图 + 最多 16 个透明图层），支持透明背景。每次生成都会保存完整过程（提示词、参考图副本、参数、产物），可查询、可复现。内置 17 类提示词模板。使用该技能时：用户想画图、生成图片、改图、编辑图片、做海报/UI/产品图/插画/角色/地图/信息图/分镜等任何视觉内容，或需要高质量的 AI 图像生成能力，或需要把设计稿拆成可编辑图层 / 抠出透明背景素材。
 license: MIT
 tags: ["image-generation", "seedream-5.0-pro", "seedream", "volcengine", "text-to-image", "image-to-image", "interactive-edit", "layer-decomposition", "transparent-background", "local-save", "reproducible", "cli"]
-version: 3.0.4
+version: 3.0.5
 ---
 
 # Seedream 5.0 Pro 图像生成
@@ -34,7 +34,7 @@ version: 3.0.4
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `--size` / `-s` | `2K`（`split` 为 `auto`） | `1K` / `1.5K` / `2K`；draw/edit/cutout 另支持 `宽x高`，`split` 仅档位 + `auto` |
-| `--format` | `png` | `png` / `jpeg`；`split` 只作用于底图；**`cutout` 没有此选项** |
+| `--format` | `jpeg`（`split` 为 `png`） | `png` / `jpeg`；`jpeg` 体积小、可直接查看与发送，要无损或透明背景时显式传 `png`；`split` 只作用于底图；**`cutout` 没有此选项** |
 | `--watermark` | 关闭 | 加此开关才带水印 |
 | `--optimize` | `standard` | `standard` / `fast` |
 | `--timeout` / `-t` | `300` | API 超时（秒） |
@@ -140,6 +140,8 @@ seedream replay [<id>|last] [--run]     # 默认只预演、不消耗额度；�
 
 - 记录落在数据根目录（`$SEEDREAM_HOME`，默认 `cwd/.seedream/`）的 `runs/<run_id>/`：
   `run.json`（唯一真相）+ `inputs/`（参考图副本，sha256 命名，可寻址）+ `outputs/`（产物）。
+- 产物格式：`draw` / `edit` 默认 **`jpeg`**（体积小，下载完可直接查看、直接发送）；要无损再加 `--format png`。
+  `split` 底图默认 `png`（图层恒为透明白底 png），`cutout` 恒为 png。
 - ⚠️ **`run.json.prompt` 是原始像素提示词（复用用这个）；`prompt_sent` 是换算后的实际请求（仅供审计，勿当输入）**。
 - **失败的任务同样保存了输入**（`status=error`），可直接 `replay` 或改参数重跑。
 - 「改上次那张图」：`seedream show last` 看清原提示词与输入 → 再用

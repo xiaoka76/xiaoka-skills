@@ -54,12 +54,15 @@ cd skills/seedream-image && pip install -e . && seedream --help
 | `--images`（可多次） | — | ✅ 必填（≤10 张） | — | — | — |
 | `--prompt` / `-p` | — | — | 可选 | 可选 | split 无；cutout 有内置默认提取指令 |
 | `--size` / `-s` | ✅ | ✅ | ✅ | ✅ | `2K`（split 为 `auto`） |
-| `--format`（`png`/`jpeg`） | ✅ | ✅ | ✅（只作用于底图） | ❌ **无此选项** | `png` |
+| `--format`（`png`/`jpeg`） | ✅ | ✅ | ✅（只作用于底图） | ❌ **无此选项** | `jpeg`（draw/edit）；`split` 底图为 `png` |
 | `--watermark` | ✅ | ✅ | ✅ | ✅ | 关闭 |
 | `--optimize` | ✅ | ✅ | ✅ | ✅ | `standard` |
 | `--timeout` / `-t` | ✅ | ✅ | ✅ | ✅ | `300` |
 
 > `cutout` 的输出**恒为 png**（透明通道不能存 jpeg），因此 CLI 不暴露 `--format`，从源头避免误用。
+
+> `draw` / `edit` 默认输出 **`jpeg`**——jpeg 体积小，生成后可直接下载、查看、发送，不需要再转格式；
+> 需要无损存档或后续二次编辑再显式加 `--format png`。`split` 底图默认 `png`（图层恒为 png，不受 `--format` 影响）。
 
 记录类子命令：
 

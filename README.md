@@ -102,6 +102,7 @@ uv run seedream draw "一只橘猫坐在窗台上，午后阳光" --size 2K
 seedream edit "把这只猫放在日式庭院里" \
     --images "https://example.com/cat.jpg" \
     --size 1K
+# 产物格式：draw / edit 默认 jpeg（体积小，可直接查看与发送），需无损加 --format png
 
 # 看历史任务 / 看详情 / 复现（默认只预演，加 --run 真跑）
 seedream ls

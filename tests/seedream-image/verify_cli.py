@@ -152,6 +152,9 @@ check("文生图请求体不含 image", "image" not in b)
 r = latest()
 check("run.json: kind/draw + status/success + inputs 空", r["kind"] == "draw" and r["status"] == "success" and r["inputs"] == [])
 check("产物落在 outputs/ 且真实存在", "/outputs/" in r["outputs"][0]["path"] and Path(r["outputs"][0]["path"]).is_file())
+check("draw 默认下发 output_format=jpeg", b.get("output_format") == "jpeg")
+check("draw 默认产物后缀 .jpg（生成后无需手动转格式）", r["outputs"][0]["path"].endswith(".jpg"),
+      r["outputs"][0]["path"])
 
 p = cli("edit", "把图1的水杯换成白瓷马克杯，保持手部姿势与画面其他部分不变", "--images", str(REF))
 check("edit 成功", p.returncode == 0)
@@ -161,6 +164,8 @@ inp = r["inputs"][0]
 check("输入记录了 sha256（64 位）", len(inp.get("sha256") or "") == 64)
 check("输入记录了尺寸", (inp.get("width"), inp.get("height")) == (64, 64))
 check("输入图副本已落盘到 inputs/", Path(inp["path"]).is_file() and "/inputs/" in inp["path"])
+check("edit 默认下发 output_format=jpeg", last_body().get("output_format") == "jpeg")
+check("edit 默认产物后缀 .jpg", r["outputs"][0]["path"].endswith(".jpg"), r["outputs"][0]["path"])
 
 p = cli("edit", "将图1的人物放到图2的庭院场景中，光影自然融合", "--images", str(REF), "--images", str(REF2))
 check("多图 edit 成功", p.returncode == 0)
@@ -330,6 +335,19 @@ check("明确声明不会自动改图", "不会自动改图" in out)
 p = cli("edit", "改一下", "--images", str(HUGE_RATIO), expect_ok=False)
 check("宽高比超限被本地拦下", p.returncode != 0 and "宽高比" in p.stderr, p.stderr[-160:])
 check("超限图没有发出请求", len(CAPTURED) == before)
+
+print("\n13) 默认格式可被 --format 覆盖（新跑 2 个任务）")
+before = len(CAPTURED)
+cli("draw", "一只戴贝雷帽的橘猫坐在窗台上", "--format", "png")
+r = latest()
+check("draw --format png：请求体与落盘后缀都是 png",
+      last_body().get("output_format") == "png" and r["outputs"][0]["path"].endswith(".png"),
+      f"{last_body().get('output_format')} / {r['outputs'][0]['path']}")
+cli("edit", "把图1的水杯换成白瓷马克杯", "--images", str(REF), "--format", "jpeg")
+r = latest()
+check("edit --format jpeg：请求体 jpeg、落盘 .jpg（显式传等价于默认）",
+      last_body().get("output_format") == "jpeg" and r["outputs"][0]["path"].endswith(".jpg"))
+check("两次覆盖都真的发出了请求", len(CAPTURED) == before + 2)
 
 print(f"\n{'=' * 58}\nPASS {len(PASS)} / FAIL {len(FAIL)}  （共 {len(PASS) + len(FAIL)} 项）")
 if FAIL:
