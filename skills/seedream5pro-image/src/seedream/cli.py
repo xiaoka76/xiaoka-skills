@@ -598,9 +598,9 @@ def mark(
     point: Annotated[list[str] | None, typer.Option("--point", help="点选坐标 x,y（像素，可多次；可写 x,y:标签）")] = None,
     box: Annotated[list[str] | None, typer.Option("--box", help="框选坐标 x1,y1,x2,y2（像素，可多次；可写 x1,y1,x2,y2:标签）")] = None,
     grid: Annotated[bool, typer.Option("--grid/--no-grid", help="预览图是否叠加坐标网格（默认开启）")] = True,
-    plain: Annotated[bool, typer.Option("--plain", help="提交模式：输出纯标记图（无网格/文字），可直接当参考图传给模型；产物超 2MB 会降档，需严格原图尺寸加 --max-edge 0")] = False,
+    plain: Annotated[bool, typer.Option("--plain", help="提交模式：输出纯标记图（无网格/文字），严格按原图尺寸出图，可直接当参考图传给模型（要控体积另加 --max-edge）")] = False,
     output: Annotated[str | None, typer.Option("--out", "-o", help="输出路径（默认 <数据根>/mark/<id>.jpg；后缀决定格式，.png 无损）")] = None,
-    max_edge: Annotated[int | None, typer.Option("--max-edge", help="输出最长边上限（默认自动，达 2MB 预览上限时自动降档；0=强制原始尺寸且不降档）")] = None,
+    max_edge: Annotated[int | None, typer.Option("--max-edge", help="输出最长边上限（预览模式默认自动：达 2MB 预览上限时降档；--plain 提交模式默认 0=严格原图尺寸）")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="以 JSON 输出结果，便于程序化处理")] = False,
 ) -> None:
     """
@@ -620,8 +620,11 @@ def mark(
       # 3) 需要把标记图本身作为模型输入时（对应官方"任意标记"形式）
       seedream mark photo.png --box 820,520,1180,860 --plain -o marked.png
 
-    分辨率默认自动：按原始尺寸出图，只有在产物达到 2MB 预览上限时才自动降档，
+    预览模式分辨率默认自动：按原始尺寸出图，只有在产物达到 2MB 预览上限时才自动降档，
     因此不需要自己算缩放比。要强制原始尺寸（哪怕文件更大）加 --max-edge 0。
+
+    `--plain`（提交模式）默认就是**严格原图尺寸**——它的产物要喂给模型，保真优先；
+    要控制体积再显式传 `--max-edge`。
 
     标记编号顺序为「点选在前、框选在后」。
     """
@@ -667,9 +670,14 @@ def mark(
         typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
 
+    # 提交模式默认**严格按原图尺寸**（不套用 2MB 预览上限）：
+    # --plain 的产物是喂给模型的参考图，保真优先；2MB 上限只是"能否内联预览"的约束，
+    # 不该让提交物缩水。需要控制体积时显式传 --max-edge。
+    effective_max_edge = 0 if (plain and max_edge is None) else max_edge
+
     try:
         result = render_preview(image, marks, grid=grid, output_path=output, plain=plain,
-                                max_edge=max_edge)
+                                max_edge=effective_max_edge)
     except (FileNotFoundError, ValueError) as e:
         typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)

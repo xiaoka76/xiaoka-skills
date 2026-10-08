@@ -108,9 +108,13 @@ check("--plain 输出原图尺寸（无留白）", d5["margin_left"] == 0 and d5
 _pl = Image.open(PLAIN)
 check("--plain 保持原图宽高比（比例不变）",
       abs(_pl.size[0] / _pl.size[1] - src_w / src_h) < 0.02, str(_pl.size))
-check("--plain 大图会按 2MB 上限降档并明确告知可强制原图尺寸",
-      d5["auto_scaled"] is True and any("--max-edge 0" in w for w in d5["warnings"]),
-      f"auto_scaled={d5['auto_scaled']} warn={d5['warnings']}")
+check("【核心】--plain 默认严格原图尺寸（提交物不因 2MB 预览上限缩水）",
+      d5["auto_scaled"] is False and d5["scale"] == 1.0
+      and Image.open(PLAIN).size == (src_w, src_h),
+      f"auto_scaled={d5['auto_scaled']} scale={d5['scale']} size={Image.open(PLAIN).size}")
+check("--plain 想控体积可显式传 --max-edge",
+      mark_json(str(PHOTO), "--box", "300,400,600,700", "--plain",
+                "-o", str(WORK / "p_me.png"), "--max-edge", "1200")["scale"] < 1.0)
 _p0 = mark_json(str(SMALL), "--box", "50,50,150,120", "--plain", "-o", str(WORK / "p0.png"), "--max-edge", "0")
 check("--plain --max-edge 0 → 严格原图尺寸",
       Image.open(WORK / "p0.png").size == (320, 200), str(Image.open(WORK / "p0.png").size))
