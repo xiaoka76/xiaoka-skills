@@ -56,6 +56,8 @@
       "z_index": null,
       "name": null,
       "description": null,
+      "bbox_base": null,
+      "bbox_base_size": null,
       "bbox_pixel": null,
       "prompt_fragment": null,
       "bbox_note": null

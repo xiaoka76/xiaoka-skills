@@ -112,7 +112,7 @@ check("多图未标归属 → 报错", len(r.errors) == 1 and "属于哪张参�
 r = conv("把<bbox>0 0 100 100</bbox>换掉", [(1000, 1000)])
 check("单图可省略归属", not r.errors and r.converted == 1)
 r = conv("把图1<bbox>0 0 100 100</bbox>换掉", [None])
-check("参考图尺寸未知（网络 URL）→ 报错并提示改本地路径",
+check("参考图尺寸未知（URL / data URI）→ 报错并提示改本地路径",
       len(r.errors) == 1 and "本地图片路径" in r.errors[0].message,
       str([i.message[:60] for i in r.issues]))
 

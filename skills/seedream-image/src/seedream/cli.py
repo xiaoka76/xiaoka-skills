@@ -41,9 +41,11 @@ from seedream.run import (
     RUN_KINDS,
     append_index,
     create_run,
+    data_url_to_bytes,
     format_size,
     list_legacy_runs,
     load_run,
+    read_image_dimensions,
     read_index,
     record_input,
     resolve_run,
@@ -58,6 +60,9 @@ app = typer.Typer(
 )
 
 # ── 参数校验 ──────────────────────────────────────────────────────────────────
+
+# data URI 里天然没有 alpha 通道的 MIME（本地路径对应 ALPHA_LESS_FORMATS）
+_ALPHA_LESS_MIMES: set[str] = {"image/jpeg", "image/jpg"}
 
 _SIZE_PATTERN: re.Pattern[str] = re.compile(r"^(1K|1\.5K|2K|auto|\d+x\d+)$")
 _MIN_PIXELS: int = 921600   # 1280x720
@@ -154,6 +159,20 @@ def _apply_prompt_tags(conv: ConvertResult, task: dict) -> None:
 # ── 生成主干（四个子命令共用）────────────────────────────────────────────────
 
 
+def _data_uri_mime(ref: str) -> str:
+    """取 data URI 的 MIME（如 ``image/jpeg``）；非 data URI 返回空串。"""
+    if not ref.startswith("data:"):
+        return ""
+    return ref.split(",", 1)[0].split(":", 1)[-1].split(";", 1)[0].strip().lower()
+
+
+def _lacks_alpha(ref: str) -> bool:
+    """输入图是否天然没有 alpha 通道：本地路径看后缀，data URI 看 MIME。"""
+    if ref.startswith("data:"):
+        return _data_uri_mime(ref) in _ALPHA_LESS_MIMES
+    return Path(ref).suffix.lower() in ALPHA_LESS_FORMATS
+
+
 def _validate_inputs(
     images: list[str],
     *,
@@ -185,12 +204,35 @@ def _validate_inputs(
         for ref in images:
             if ref.startswith(("http://", "https://")):
                 continue
-            if Path(ref).suffix.lower() in ALPHA_LESS_FORMATS:
+            if _lacks_alpha(ref):
+                shown = Path(ref).name if not ref.startswith("data:") else "该 data URI"
                 typer.secho(
-                    f"错误: 透明背景需要带 alpha 通道的输入图，{Path(ref).name} 没有（请改用 png / webp）",
+                    f"错误: 透明背景需要带 alpha 通道的输入图，{shown} 不含 alpha 通道"
+                    f"（请改用 png / webp）",
                     fg=typer.colors.RED, err=True,
                 )
                 raise typer.Exit(1)
+
+
+def _probe_input_size(ref: str) -> tuple[int, int] | None:
+    """
+    取参考图尺寸（坐标标签换算要用）。
+
+    - 本地路径：读文件头
+    - ``data:image/``：解码内联字节后读，不落盘
+    - ``http(s)://``：拿不到 → ``None``，由标签校验层提示「尺寸未知」
+
+    :param ref: 参考图（本地路径 / data URI / http(s) URL）
+    :return: (width, height)，未知时为 ``None``
+    """
+    if ref.startswith(("http://", "https://")):
+        return None
+    if ref.startswith("data:image/"):
+        try:
+            return read_image_dimensions(data_url_to_bytes(ref))
+        except ValueError:  # 载荷不是合法 base64 → 当尺寸未知，不在这里报格式错
+            return None
+    return probe_image_size(ref)
 
 
 def _execute(
@@ -241,13 +283,13 @@ def _execute(
         try:
             resolved.append(resolve_image_path(ref))
             # 图层拆分比普通图生图更严（格式仅 png/jpeg、总像素 ≥512x512）：本地先拦，
-            # 否则要等接口报错才知道。URL / data URI 读不到本地尺寸，跳过交给接口判断。
+            # 否则要等接口报错才知道。http(s) URL / data URI 没有本地文件可读，跳过交给接口判断。
             if layer_decomposition and not ref.startswith(("http://", "https://", "data:image/")):
                 check_layer_decomposition_limits(ref)
         except (FileNotFoundError, ValueError) as e:
             typer.secho(f"错误: {e}", fg=typer.colors.RED, err=True)
             raise typer.Exit(1)
-        sizes.append(None if ref.startswith(("http://", "https://")) else probe_image_size(ref))
+        sizes.append(_probe_input_size(ref))
 
     # ② 组装请求
     task: dict = {
@@ -548,7 +590,7 @@ def cutout(
     """
     透明背景素材 —— 从图片中抠出主体，输出带 alpha 通道的 PNG。
 
-    输入必须是带透明通道的格式（png / webp）；jpg 没有 alpha 通道，会被本地拦下。
+    输入必须带 alpha 通道；``jpg`` / ``jpeg`` 天然没有，会被本地拦下。
 
     示例：
 

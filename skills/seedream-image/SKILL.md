@@ -73,7 +73,7 @@ export SEEDREAM_HOME="/path/to/data"                # 可选，记录存放根�
 | `run.json` | `prompt`＝像素（**复用用这个**）· `prompt_sent`＝换算后（**仅供审计，勿当输入**） |
 
 > 坐标只有一种形态：**原图像素**。唯一例外是 `run.json.prompt_sent`（已换算的请求原文，只为事后审计）。
-> 把它（0~999 的值）再当像素粘回去 = 静默落到错误区域；要复用就用 `prompt` 或直接 `seedream replay`。
+> 把 `prompt_sent` 的内容再当像素粘回去 = 静默落到错误区域；要复用就用 `prompt` 或直接 `seedream replay`。
 
 ### 标签校验（`edit` / `split` 在本地先拦）
 

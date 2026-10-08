@@ -8,14 +8,14 @@
 `skills/seedream-image/` 下新增的任何东西都会被打进四个安装目标。
 
 更实际的理由：安装前的安全扫描有 **100 文件上限**（`scanner.py`，超出部分**根本不扫**）。
-技能目录**当前已 109 个文件**，早就越过上限；再往里塞测试只会让未被扫描的盲区更大。
+技能目录**当前已 110 个文件**，早就越过上限；再往里塞测试只会让未被扫描的盲区更大。
 放在仓库根的 `tests/` 里，既不进安装包，也不占用扫描额度。
 
 > ⚠️ **别在这个目录里放 `SKILL.md`**：hub 用「哪个目录含 SKILL.md」来发现技能
 > （`_github_list_skill_md_roots()`），放一个进去会被当成**另一个可安装技能**。
 >
 > 实证（3.0.2 安装后的副本）：顶层只有 `LICENSE / SKILL.md / pyproject.toml / references / src / uv.lock`，
-> 共 109 个文件，**没有** `tests/`，也没有仓库里已 gitignore 的 `build/`、`egg-info`
+> 共 110 个文件，**没有** `tests/`，也没有仓库里已 gitignore 的 `build/`、`egg-info`
 > —— 即"git 跟踪了什么、且位于 SKILL.md 那个目录下，才装什么"。
 
 ## 怎么跑

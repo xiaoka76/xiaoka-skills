@@ -227,7 +227,7 @@ def convert_prompt_tags(
         if size is None:
             result.issues.append(TagIssue(
                 "error",
-                f"标签 {span_text} 对应的参考图（第 {index + 1} 张）是网络 URL，读不到尺寸，"
+                f"标签 {span_text} 对应的参考图（第 {index + 1} 张）尺寸未知（网络 URL 或 data URI），"
                 f"无法据此换算坐标。请改用本地图片路径（工具需要读取图片尺寸）",
             ))
             out.append(span_text)

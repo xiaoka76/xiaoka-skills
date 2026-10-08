@@ -177,6 +177,8 @@ check("split 成功", p.returncode == 0)
 b = last_body()
 check("请求体 layer_decomposition=true 且 size 默认 auto",
       b.get("layer_decomposition") is True and b.get("size") == "auto")
+check("split 默认下发 output_format=png（底图仍 png，别被 draw/edit 的 jpeg 带跑）",
+      b.get("output_format") == "png", str(b.get("output_format")))
 check("无 -p 时不发送 prompt 字段", "prompt" not in b)
 r = latest()
 layer = [o for o in r["outputs"] if o["z_index"] == 1][0]
@@ -294,6 +296,12 @@ check("data URI 输入可用", p.returncode == 0, p.stderr[-200:])
 inp = latest()["inputs"][0]
 check("data URI 也落盘并记录 sha256",
       Path(inp["path"]).is_file() and len(inp["sha256"]) == 64)
+p = cli("edit", "把图1<bbox>10 10 50 50</bbox>换成暖色调", "--images", uri)
+check("【核心】data URI 的尺寸能解出来，坐标标签照常换算（不再误报「网络 URL」）",
+      p.returncode == 0 and "网络 URL" not in p.stderr, p.stderr[-300:])
+check("data URI 的换算结果确实下发给了接口（原像素标签已被换算）",
+      "<bbox>10 10 50 50</bbox>" not in str(last_body().get("prompt")),
+      str(last_body().get("prompt")))
 
 print("\n9) 图层拆分底图尺寸异常时降级（不把成功判成失败）")
 BASE_SIZE_MODE["mode"] = "bad"

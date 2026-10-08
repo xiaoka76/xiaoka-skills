@@ -7,7 +7,6 @@ Seedream 5.0 Pro - 图像生成核心函数模块
 """
 
 import base64
-import hashlib
 import os
 import re
 import time
@@ -23,7 +22,6 @@ from .config import (
     MIN_LAYER_PIXELS,
     MAX_REF_ASPECT,
     MAX_REF_BYTES,
-    MAX_REF_IMAGES,
     MAX_REF_PIXELS,
     MIN_REF_EDGE,
     MIN_REF_PIXELS,
