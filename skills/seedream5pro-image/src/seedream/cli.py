@@ -598,7 +598,7 @@ def mark(
     point: Annotated[list[str] | None, typer.Option("--point", help="点选坐标 x,y（像素，可多次；可写 x,y:标签）")] = None,
     box: Annotated[list[str] | None, typer.Option("--box", help="框选坐标 x1,y1,x2,y2（像素，可多次；可写 x1,y1,x2,y2:标签）")] = None,
     grid: Annotated[bool, typer.Option("--grid/--no-grid", help="预览图是否叠加坐标网格（默认开启）")] = True,
-    plain: Annotated[bool, typer.Option("--plain", help="提交模式：输出原图尺寸的纯标记图，可直接当参考图传给模型")] = False,
+    plain: Annotated[bool, typer.Option("--plain", help="提交模式：输出纯标记图（无网格/文字），可直接当参考图传给模型；产物超 2MB 会降档，需严格原图尺寸加 --max-edge 0")] = False,
     output: Annotated[str | None, typer.Option("--out", "-o", help="输出路径（默认 <数据根>/mark/<id>.jpg；后缀决定格式，.png 无损）")] = None,
     max_edge: Annotated[int | None, typer.Option("--max-edge", help="输出最长边上限（默认自动，达 2MB 预览上限时自动降档；0=强制原始尺寸且不降档）")] = None,
     as_json: Annotated[bool, typer.Option("--json", help="以 JSON 输出结果，便于程序化处理")] = False,

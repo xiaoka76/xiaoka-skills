@@ -3,7 +3,7 @@ name: seedream5pro-image
 description: Seedream 5.0 Pro 专用图像生成技能。文生图 / 图生图 / 交互编辑（<point>/<bbox> 坐标精确定位）/ 图层拆分（1 底图 + 最多 16 个透明图层），支持透明背景。每次生成都会保存完整过程（提示词、参考图副本、参数、产物），可查询、可复现。内置 17 类提示词模板。使用该技能时：用户想画图、生成图片、改图、编辑图片、做海报/UI/产品图/插画/角色/地图/信息图/分镜等任何视觉内容，或需要高质量的 AI 图像生成能力，或需要把设计稿拆成可编辑图层 / 抠出透明背景素材。
 license: MIT
 tags: ["image-generation", "seedream-5.0-pro", "seedream", "volcengine", "text-to-image", "image-to-image", "interactive-edit", "layer-decomposition", "transparent-background", "local-save", "reproducible", "cli"]
-version: 3.0.2
+version: 3.0.3
 ---
 
 # Seedream 5.0 Pro 图像生成
@@ -552,7 +552,7 @@ seedream draw "..." --optimize fast
 | 模式 | 命令 | 输出 | 用途 |
 |------|------|------|------|
 | **预览模式**（默认） | `seedream mark a.png --box ...` | 原图 + 留白坐标网格 + 彩色标记 + 坐标标签 | 给 agent 核对坐标 |
-| **提交模式** | `... --plain -o marked.png` | 原图宽高比、只有彩色标记（无网格、无文字） | **可直接当 `--images` 传给模型** |
+| **提交模式** | `... --plain -o marked.png` | 保持原图宽高比、只有彩色标记（无网格、无文字）；**产物超 2MB 预览上限时会降档，需严格原图尺寸加 `--max-edge 0`** | **可直接当 `--images` 传给模型** |
 
 > ⚠️ **预览图不要当 `--images` 传**——它带留白和刻度数字，会污染模型输入，等于把"坐标定位"误变成"标记图输入"。要用标记图做输入就加 `--plain`。
 
@@ -625,7 +625,7 @@ seedream edit "修复红框区域中手部的结构错误，移除所有标记�
 | `--point x,y[:标签]` | 点选坐标（像素，可多次指定） | - |
 | `--box x1,y1,x2,y2[:标签]` | 框选坐标（像素，可多次指定） | - |
 | `--grid` / `--no-grid` | 预览图是否叠加坐标网格 | 开启 |
-| `--plain` | 提交模式：输出纯标记图，可直接作参考图传给模型 | 关闭 |
+| `--plain` | 提交模式：输出纯标记图，可直接作参考图传给模型。注意它同样受 2MB 上限约束（大图会降档）——要严格原图尺寸请同时加 `--max-edge 0` | 关闭 |
 | `--out` / `-o` | 输出路径（后缀决定格式：`.jpg` 默认，`.png` 无损） | `<数据根>/mark/<id>.jpg` |
 | `--max-edge` | 输出最长边上限；默认自动（原始尺寸，超 2MB 自动降档），`0` = 强制原始尺寸且不降档 | 自动 |
 | `--json` | 以 JSON 输出结果，便于程序化处理 | 关闭 |

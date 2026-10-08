@@ -246,6 +246,9 @@ System Volume Information/
 .directory
 lost+found/
 
+# 测试运行时产物（临时图 / mock 落盘 / 临时数据根）
+tests/**/work*/
+
 # Project-specific
 seedream-output/
 .seedream/
