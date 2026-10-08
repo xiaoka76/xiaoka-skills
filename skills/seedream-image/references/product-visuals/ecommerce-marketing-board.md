@@ -183,7 +183,7 @@
     "product_shots": "front-facing hero box, angled sachet display box, close-up beverage macro",
     "food_photography": "high-detail commercial food styling, shallow depth of field, crisp texture emphasis"
   },
-  "quality": "ultra-detailed commercial design mockup, polished e-commerce key visual plus details page plus ad storyboard, 4K",
+  "quality": "polished e-commerce key visual: one clean layout holding the main shot, the details page and the ad storyboard, with restrained spacing and studio-grade commercial lighting",
   "constraints": {
     "must_keep": [
       "5 个销售模块 + 1 个 TVC 分镜带都必须出现且可识别",

@@ -17,7 +17,7 @@
 
 ## 何时使用
 
-- 用户提供原图（REFERENCE_0）+ 一句“换成 XX 背景”
+- 用户提供原图（图1）+ 一句“换成 XX 背景”
 - 用户希望主体不动只换背景
 - 用户希望多张图统一背景
 
@@ -44,7 +44,7 @@
 📝 提示词
 
 ```text
-以 REFERENCE_0 为基础，保留 {argument name="subject" default="画面中央的白色按压瓶"} 的形态、比例、标签和材质，仅将背景替换为 {argument name="new background" default="清晨阳光下的木质梳妆台，柔光从左侧窗户洒入，远景轻微虚化，背景元素包含一杯水、几片白色花瓣、折叠的米色毛巾"}。
+以 图1 为基础，保留 {argument name="subject" default="画面中央的白色按压瓶"} 的形态、比例、标签和材质，仅将背景替换为 {argument name="new background" default="清晨阳光下的木质梳妆台，柔光从左侧窗户洒入，远景轻微虚化，背景元素包含一杯水、几片白色花瓣、折叠的米色毛巾"}。
 重新生成与新背景一致的阴影与反光，让主体看起来真实地存在于新场景中。
 不要修改主体本身的颜色、文字、形状或材质。
 渲染风格：{argument name="render style" default="高分辨率商业摄影，颗粒感真实，浅景深，主体清晰，背景自然虚化"}。
@@ -72,7 +72,7 @@
 📝 提示词
 
 ```text
-以 REFERENCE_0 为基础，保留 {argument name="subject" default="画面中的人物"} 的姿势、表情、穿着与五官，仅将背景替换为 {argument name="studio backdrop" default="中性灰背景纸"}。
+以 图1 为基础，保留 {argument name="subject" default="画面中的人物"} 的姿势、表情、穿着与五官，仅将背景替换为 {argument name="studio backdrop" default="中性灰背景纸"}。
 重新生成与新背景一致的柔光阴影；不要改变人物形象、肤色、服装颜色。
 渲染风格：{argument name="render style" default="棚拍人像摄影，柔光，自然肤质"}。
 ```
@@ -82,7 +82,7 @@
 📝 提示词
 
 ```text
-以 REFERENCE_0 为基础，保留 {argument name="subject" default="画面中央的产品"}，将背景替换为 {argument name="outdoor scene" default="海边木栈道，黄昏暖光，远处海浪虚化"}。
+以 图1 为基础，保留 {argument name="subject" default="画面中央的产品"}，将背景替换为 {argument name="outdoor scene" default="海边木栈道，黄昏暖光，远处海浪虚化"}。
 保留产品所有标签与材质细节；为产品重新生成与户外光线方向一致的阴影。
 不要让产品颜色因光线偏移过强（保持品牌色）。
 ```
@@ -92,7 +92,7 @@
 📝 提示词
 
 ```text
-以 REFERENCE_0 为基础，保留主体；自动选择最适合该主体的“干净影棚 / 自然场景 / 极简室内”三种背景之一并替换。
+以 图1 为基础，保留主体；自动选择最适合该主体的“干净影棚 / 自然场景 / 极简室内”三种背景之一并替换。
 保持原图比例；为主体重新生成自然阴影。
 ```
 

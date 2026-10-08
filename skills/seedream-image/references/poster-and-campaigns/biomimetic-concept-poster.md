@@ -137,7 +137,7 @@
     "technical_views": "orthographic",
     "inspiration_image": "{argument name=\"inspiration camera\" default=\"underwater side angle with light rays from above\"}"
   },
-  "quality": "ultra-clean, polished, high contrast, sharp, poster-ready, concept design board for {argument name=\"industry\" default=\"aerospace\"} branding or speculative industrial design",
+  "quality": "clean high-contrast concept board: one clear hero render, precise technical views, restrained luxury-tech finish for {argument name=\"industry\" default=\"aerospace\"} branding",
   "constraints": {
     "must_keep": [
       "5 阶段演化条从左到右逻辑清晰（生物 → 抽象 → 产品）",

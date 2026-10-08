@@ -23,7 +23,7 @@
 
 ## 何时使用
 
-- 用户提供原图（REFERENCE_0）+ 想换某物
+- 用户提供原图（图1）+ 想换某物
 - 用户希望除被替换对象外其他都不动
 
 不要使用：
@@ -49,7 +49,7 @@
 📝 提示词
 
 ```text
-以 REFERENCE_0 为基础，将 {argument name="original object" default="桌上的白色陶瓷咖啡杯"} 替换为 {argument name="replacement object" default="同尺寸的不锈钢保温杯，哑光银色，瓶身有简洁品牌字 'AURORA'"}。
+以 图1 为基础，将 {argument name="original object" default="桌上的白色陶瓷咖啡杯"} 替换为 {argument name="replacement object" default="同尺寸的不锈钢保温杯，哑光银色，瓶身有简洁品牌字 'AURORA'"}。
 保留原图中其他所有元素的位置、光线、阴影与构图；只对被替换对象本身做修改。
 为新对象重新生成与原图光线方向一致的阴影、反光与材质。
 不要改变其它人物、桌面、背景。
@@ -76,7 +76,7 @@
 📝 提示词
 
 ```text
-以 REFERENCE_0 为基础，使用 REFERENCE_1（蒙版）所标记的区域，精确替换 {argument name="object to replace" default="人物的白色 T 恤"} 为 {argument name="new object" default="深蓝色长袖卫衣，胸前印有 'AURORA' 字样"}。
+以 图1 为基础，使用 图2（蒙版）所标记的区域，精确替换 {argument name="object to replace" default="人物的白色 T 恤"} 为 {argument name="new object" default="深蓝色长袖卫衣，胸前印有 'AURORA' 字样"}。
 仅对蒙版区域做修改，其余区域必须像素级保留；
 为新衣服生成与原图灯光一致的褶皱与阴影；
 保持人物身材与姿势完全不变。
@@ -87,7 +87,7 @@
 📝 提示词
 
 ```text
-以 REFERENCE_0 为基础，将画面中所有 {argument name="original objects" default="木质椅子"} 替换为 {argument name="replacement objects" default="米色塑胶椅"}。
+以 图1 为基础，将画面中所有 {argument name="original objects" default="木质椅子"} 替换为 {argument name="replacement objects" default="米色塑胶椅"}。
 保持每把椅子的位置、角度与摆放不变；
 为新椅子生成与原图光线方向一致的阴影；
 不要修改桌子、墙面、灯具、人物。
@@ -98,7 +98,7 @@
 📝 提示词
 
 ```text
-以 REFERENCE_0 为基础，将原图中 {argument name="object" default="主要前景物体"} 替换为视觉风格更现代的同功能版本，自动决定材质与配色，但保持位置与尺寸一致。
+以 图1 为基础，将原图中 {argument name="object" default="主要前景物体"} 替换为视觉风格更现代的同功能版本，自动决定材质与配色，但保持位置与尺寸一致。
 ```
 
 ## 避免事项

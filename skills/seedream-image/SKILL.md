@@ -16,7 +16,7 @@ version: 3.0.4
 > · [`references/run-format.md`](references/run-format.md)（记录字段）
 > · [`references/prompt-guide.md`](references/prompt-guide.md)（官方 5 条硬要求 + 各场景范例）
 > · [`references/prompt-writing.md`](references/prompt-writing.md)（模板方法论）
-> · [`references/README.md`](references/README.md)（17 类 91 个模板索引）
+> · [`references/README.md`](references/README.md)（17 类 93 个模板索引）
 
 ## 四个生成子命令
 
@@ -150,7 +150,10 @@ seedream replay [<id>|last] [--run]     # 默认只预演、不消耗额度；�
 
 ## Agent 使用规范（强制）
 
-> Seedream 是提示词驱动模型：提示词越丰富、越详细，效果越好。简短的提示词会导致画面空洞、细节缺失。
+> Seedream 是提示词驱动模型：**"主体 + 行为 + 环境"必须写全**，美学元素用**精准的风格词**补充。
+> 官方口径（5.0 一代）：模型理解力更强，**简洁精确的提示通常优于重复堆叠华丽复杂的词汇**——
+> 要写"画面信息"，不堆"形容词"。反过来，**只写一个词**（"一只猫"）同样是错的：
+> 缺的不是形容词，是信息。
 
 **文生图（无参考图）：**
 
@@ -160,7 +163,7 @@ seedream replay [<id>|last] [--run]     # 默认只预演、不消耗额度；�
    中文 ≤ 300 字、英文 ≤ 600 词。
    - ❌ 禁止：用户说"画一只猫" → 直接 `seedream draw "一只可爱的猫"`（一句话敷衍）。
    - ✅ 示例：`"黄昏时分的赛博朋克茶馆，雨水顺着发光霓虹窗流下。屋内银发少女坐在窗边捧热茶，
-     窗外全息龙形灯笼在雨街漂浮。细节丰富，电影级光影，超精细8K。"`
+     窗外全息龙形灯笼在雨街漂浮。暖黄灯光自右侧打入，湿地面反着霓虹，中景构图。"`
 3. **找不到完全匹配的模板**：取最接近的作骨架，仍按 6 维度展开，不得退化为一句话。
 4. 至少先读 [`references/prompt-guide.md`](references/prompt-guide.md)（官方 5 条硬要求：连贯自然语言 /
    写明用途 / 精准风格词 / 文字加双引号 / 编辑时显式声明保持不变的部分）与

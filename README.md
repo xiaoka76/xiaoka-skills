@@ -41,7 +41,7 @@ python3 scripts/web_search.py --engine global "同款商品" --type visual --ima
 
 ### 图像生成 — `seedream-image`
 
-[Seedream 5.0 Pro](https://www.volcengine.com/product/doubao-seedream) 专用图像生成技能。支持文生图、图生图、交互编辑、图层拆分与透明背景，内置 17 类共 91 个提示词模板。
+[Seedream 5.0 Pro](https://www.volcengine.com/product/doubao-seedream) 专用图像生成技能。支持文生图、图生图、交互编辑、图层拆分与透明背景，内置 17 类共 93 个提示词模板。
 
 **核心能力：**
 - 文生图（支持中文 prompt）
@@ -56,7 +56,7 @@ python3 scripts/web_search.py --engine global "同款商品" --type visual --ima
 - 分辨率档位切换（1K / 1.5K / 2K，支持自定义宽高）
 - 子命令按**意图**划分（`draw` / `edit` / `split` / `cutout`，参数即该场景必需的信息）
 
-**内置模板分类（17 类共 91 个模板）：**
+**内置模板分类（17 类共 93 个模板）：**
 
 | 分类 | 说明 |
 |------|------|
@@ -141,7 +141,7 @@ xiaoka-skills/
 │       │   ├── tags.py      # prompt 内坐标标签的校验与换算
 │       │   ├── mark.py      # 标记预览渲染（网格 / 标签 / 自动降档）
 │       │   └── config.py    # 配置常量与数据根目录解析
-│       └── references/      # 知识库（17 类共 91 个提示词模板）
+│       └── references/      # 知识库（17 类共 93 个提示词模板）
 │           ├── README.md
 │           ├── prompt-writing.md
 │           └── <category>/

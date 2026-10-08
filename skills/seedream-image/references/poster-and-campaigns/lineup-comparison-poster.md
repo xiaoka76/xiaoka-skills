@@ -168,7 +168,7 @@
     "render_quality": "clean infographic precision with realistic product renders"
   },
   "camera": "straight-on flat poster view, no perspective distortion, centered composition",
-  "quality": "ultra detailed, print-ready, high-resolution editorial infographic, luxury brand poster",
+  "quality": "print-ready editorial infographic with crisp product renders and even panel spacing, presented like a luxury brand poster",
   "constraints": {
     "must_keep": [
       "30+ 个产品 thumbnail 必须可读且方向统一（同一视角）",

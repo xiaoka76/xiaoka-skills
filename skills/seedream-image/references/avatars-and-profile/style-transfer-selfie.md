@@ -10,7 +10,7 @@
 
 特征：
 
-- 必须基于参考图（REFERENCE_0）保留五官身份
+- 必须基于参考图（图1）保留五官身份
 - 仅修改风格 / 妆 / 服装 / 场景气氛
 - 单图输出（不是网格 / 不是 sheet）
 - 输出更像"你的另一个版本"
@@ -36,13 +36,13 @@
 
 ## 缺失信息优先提问顺序
 
-1. 是否提供参考图（REFERENCE_0）？没有的话需要文字描述本人
+1. 是否提供参考图（图1）？没有的话需要文字描述本人
 2. 想要的风格主题（cosplay / 哥特 / 胶片 / 街头 / 偶像 / 名人风）
 3. 服装 / 妆容 / 发型变化范围
 4. 场景背景（保留原图 / 新场景）
 5. 比例
 
-## 主模板：风格转换自拍（基于 REFERENCE_0）
+## 主模板：风格转换自拍（基于 图1）
 
 📖 描述
 
@@ -51,7 +51,7 @@
 📝 提示词
 
 ```text
-基于 REFERENCE_0 中的人物，保留其脸型、五官比例、肤色与基本姿势，将整体风格转换为 {argument name="target style" default="trad goth 哥特风"}：
+基于 图1 中的人物，保留其脸型、五官比例、肤色与基本姿势，将整体风格转换为 {argument name="target style" default="trad goth 哥特风"}：
 - 头发：{argument name="hair description" default="黑色短发 + 厚重齐刘海"}
 - 妆容：{argument name="makeup description" default="深色烟熏眼妆 + 黑色哑光唇"}
 - 服装：{argument name="outfit description" default="黑色皮质上衣 + 银色十字项链 + 多层叠戴"}
@@ -89,7 +89,7 @@
 📝 提示词
 
 ```text
-基于 REFERENCE_0 中的人物（如无参考图，则按 {argument name="subject self description" default="东亚年轻女性，自然微笑"} 描述），将其转换为 {argument name="character" default="原神 雷电将军"} 的 cosplay 自拍照，
+基于 图1 中的人物（如无参考图，则按 {argument name="subject self description" default="东亚年轻女性，自然微笑"} 描述），将其转换为 {argument name="character" default="原神 雷电将军"} 的 cosplay 自拍照，
 拍摄场景：{argument name="event location" default="上海漫展现场"}；
 保留人物本人五官特征，让人能看出"是 ta 在 cos 这个角色"；
 渲染为手机自拍照风格 + 现场氛围 + 自然光。
@@ -100,7 +100,7 @@
 📝 提示词
 
 ```text
-基于 REFERENCE_0 中的人物，将其重新拍摄为 vintage 35mm 闪光胶片人像：
+基于 图1 中的人物，将其重新拍摄为 vintage 35mm 闪光胶片人像：
 - 闪光灯直射造成的硬阴影
 - 颗粒感胶片质感
 - 颜色偏 1990s 暖黄
@@ -114,7 +114,7 @@
 📝 提示词
 
 ```text
-基于 REFERENCE_0 中的人物，生成一张拍立得照片：
+基于 图1 中的人物，生成一张拍立得照片：
 - 拍立得边框（白色厚边、底部留白手写标签）
 - 人物在画面居中
 - 风格：{argument name="polaroid mood" default="日系偶像清纯"}
@@ -127,7 +127,7 @@
 📝 提示词
 
 ```text
-基于 REFERENCE_0 中的人物，将其转换为最适合的某种"高级风格化人设"自动决定：
+基于 图1 中的人物，将其转换为最适合的某种"高级风格化人设"自动决定：
 - 自动判断该人物气质适合的风格主题
 - 自动展开发型 / 妆容 / 服装 / 场景 / 灯光
 - 不修改人物身份特征

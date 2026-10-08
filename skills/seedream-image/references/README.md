@@ -1,6 +1,6 @@
 # Seedream 提示词模板
 
-本目录是 Seedream 5.0 Pro 的内置提示词模板库，共 17 类 91 个模板，覆盖 UI 样机、产品视觉、海报、插画、地图、信息图、技术架构图等场景。
+本目录是 Seedream 5.0 Pro 的内置提示词模板库，共 17 类 93 个模板，覆盖 UI 样机、产品视觉、海报、插画、地图、信息图、技术架构图等场景。
 
 ## 使用方法
 
@@ -9,12 +9,8 @@
 3. 模板中的 `{argument name="..." default="..."}` 是需要替换的参数
 4. 渲染好的 JSON 展开成自然语言 prompt 字符串，作为 `seedream draw` / `edit` 的提示词
 
-## 与 GPT Image 2 的区别
-
-- Seedream 不需要 `background`、`moderation`、`quality` 等 GPT Image 2 特有参数
-- Seedream 5.0-pro 对中文 prompt 支持良好，可以直接用中文写模板
-- 模板中的 JSON 只是「提示词结构」，不是 API 请求体
-- 最终发给接口的 `prompt` 字段是展开后的自然语言字符串
+> 模板里的 JSON **只是"提示词结构"，不是 API 请求体**；真正发给接口的是展开后的自然语言字符串。
+> Seedream 5.0 Pro 对中文 prompt 支持良好，可以直接用中文写模板。
 
 ## 模板分类
 
