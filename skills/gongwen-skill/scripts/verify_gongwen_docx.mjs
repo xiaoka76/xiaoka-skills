@@ -49,7 +49,9 @@ const installedFonts = (() => {
     return new Set(execFileSync("fc-list", ["-f", "%{family}\n"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/).flatMap((line) => line.split(",")).map((font) => font.trim()).filter(Boolean));
   } catch {
     const families = new Set();
-    const aliases = { simfang: "FangSong", simfangb: "FangSong_GB2312", fangsong: "FangSong", fangsong_gb2312: "FangSong_GB2312", "fzxiaobiaosong-b05s": "FZXiaoBiaoSong-B05S", "fzxiaobiaosong-b13s": "FZXiaoBiaoSong-B13S" };
+    const aliases = { simfang: "FangSong", simfangb: "FangSong_GB2312", fangsong: "FangSong", fangsong_gb2312: "FangSong_GB2312", "fzxiaobiaosong-b05s": "FZXiaoBiaoSong-B05S", "fzxiaobiaosong-b13s": "FZXiaoBiaoSong-B13S",
+      // 方正公文写作（个人家庭版）字库的实际文件名；无 fc-list 的 macOS 上必须显式映射。
+      fzxbsjw: "FZXiaoBiaoSong-B05S", fzfsj: "仿宋_GB2312", fzktj: "楷体_GB2312", fzht_gb18030: "方正黑体" };
     const roots = [process.env.WINDIR ? path.join(process.env.WINDIR, "Fonts") : "", process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "Microsoft", "Windows", "Fonts") : "", path.join(os.homedir(), "Library", "Fonts"), "/Library/Fonts", "/usr/share/fonts", "/usr/local/share/fonts"].filter(Boolean);
     const walk = (dir) => {
       let entries;

@@ -45,6 +45,12 @@ function installedFontFamilies() {
       "fzxiaobiaosong-b13s": "FZXiaoBiaoSong-B13S",
       fangsong: "FangSong",
       fangsong_gb2312: "FangSong_GB2312",
+      // 方正公文写作（个人家庭版）字库的实际文件名；缺省文件名不含中文，
+      // 在无 fc-list 的 macOS 上必须显式映射，否则只能拿到回退字体。
+      fzxbsjw: "FZXiaoBiaoSong-B05S", // FZXBSJW.TTF 方正小标宋简体
+      fzfsj: "仿宋_GB2312", // FZFSJ.TTF 方正仿宋_GB2312
+      fzktj: "楷体_GB2312", // FZKTJ.TTF 方正楷体_GB2312
+      fzht_gb18030: "方正黑体", // FZHT_GB18030.TTF 方正黑体
     };
     const roots = [
       process.env.WINDIR ? path.join(process.env.WINDIR, "Fonts") : "",
@@ -82,9 +88,9 @@ const FONT = {
   title: { eastAsia: preferredFont(["方正小标宋简体", "方正小标宋_GBK", "FZXiaoBiaoSong-B05S", "FZXiaoBiaoSong-B13S"], "Songti SC"), ascii: "Times New Roman", cs: "Times New Roman" },
   subtitle: { eastAsia: preferredFont(["仿宋", "仿宋_GB2312", "STFangsong"], "STFangsong"), ascii: "Times New Roman", cs: "Times New Roman" },
   body: { eastAsia: preferredFont(["仿宋", "仿宋_GB2312", "FangSong", "FangSong_GB2312", "STFangsong"], "STFangsong"), ascii: "Times New Roman", cs: "Times New Roman" },
-  h1: { eastAsia: preferredFont(["黑体", "SimHei", "Heiti SC", "STHeiti"], "Heiti SC"), ascii: "Times New Roman", cs: "Times New Roman" },
+  h1: { eastAsia: preferredFont(["方正黑体", "黑体", "SimHei", "Heiti SC", "STHeiti"], "Heiti SC"), ascii: "Times New Roman", cs: "Times New Roman" },
   h2: { eastAsia: preferredFont(["楷体", "楷体_GB2312", "KaiTi", "Kaiti SC", "STKaiti"], "Kaiti SC"), ascii: "Times New Roman", cs: "Times New Roman" },
-  song: { eastAsia: preferredFont(["宋体", "SimSun"], "Songti SC"), ascii: "宋体", cs: "宋体" },
+  song: { eastAsia: preferredFont(["Songti SC", "宋体", "SimSun"], "Songti SC"), ascii: "Times New Roman", cs: "Times New Roman" },
 };
 
 const STANDARD_FONT_CANDIDATES = {
