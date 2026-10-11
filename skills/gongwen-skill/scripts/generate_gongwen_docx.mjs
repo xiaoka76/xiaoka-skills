@@ -19,11 +19,11 @@ const FOUR_CHAR_RIGHT_INDENT = FIRST_LINE_INDENT * 2;
 // paragraph spacing at zero prevents optional left-corner fields from moving
 // the centred mark or changing the preprinted-paper reserve.
 const MM_TO_DXA = 56.692913;
-const HEADER_FIELD_BEFORE = 0;
-const AGENCY_FRAME_BEFORE = 0;
-const AGENCY_FLOW_BEFORE = 1880;
-const HEADER_FIELD_Y = 0;
-const AGENCY_FRAME_Y = Math.round(35 * MM_TO_DXA);
+// 机关标志上边缘距版心上边缘 35mm（GB/T 9704-2012 7.2.4）。
+const AGENCY_MARK_Y = Math.round(35 * MM_TO_DXA);
+const GRID_LINE = 560;
+// 发文字号与红色分隔线的标准间距 4mm。
+const DOC_NO_TO_RULE = Math.round(4 * MM_TO_DXA);
 
 function installedFontFamilies() {
   try {
@@ -232,70 +232,112 @@ function titleParagraph(text, before = "0") {
   });
 }
 
-function floatingHeaderFieldParagraph(text, fontPreset, index) {
+// 电子红头版头一律走正常文档流，不再使用 w:framePr / 浮动表格。
+// 旧实现用「浮动框绝对定位 + 流内空白段凑距离」双轨机制，Word 能对上，
+// 但飞书预览、WPS 网页版等弱渲染器一旦忽略 framePr 或按文档网格吞掉
+// 段前距，文号、红线就会冲上去与红色机关标志重叠。纯流定位下所有
+// 渲染器的纵向位置都唯一确定。
+function cornerFieldParagraph(text, fontPreset) {
+  // 份号 / 密级 / 紧急程度：版心左上、顶格、各占一个 28 磅网格行。
   return paragraph(text, {
     align: "left",
     indent: false,
     fontPreset,
     size: "32",
-    before: HEADER_FIELD_BEFORE,
-    frame: { hAnchor: "margin", vAnchor: "margin", xAlign: "left", y: HEADER_FIELD_Y + index * 560, w: CONTENT_W, h: 560 },
+    before: "0",
+    line: "560",
+    snapToGrid: false,
   });
 }
 
-function floatingAgencyMarkParagraph(text, lineCount = 1, size = "56") {
+function agencyMarkAnchor(fieldCount) {
+  // 机关标志上边缘固定在版心顶下 35mm（1984 dxa）。左上字段最多占三行，
+  // 用动态段前距补齐剩余距离，保证字段行数变化时标志纹丝不动。
+  // 不能用段前距凑 35mm：docGrid 行网格会把非整数行的 space-before
+  // 吸附成整行（Word/LibreOffice 皆然），纯段前距在各渲染器结果不一致。
+  // 改为精确行高的空段堆叠：字段行 n×560 + 整行空段 (3−n)×560 + 余量
+  // 304 = 1984（恒定 35mm）；exact 固定行高 + snapToGrid=false 不被
+  // 网格吸附，Word/WPS/LibreOffice/在线预览行为一致。
+  const pieces = [];
+  for (let i = 0; i < Math.max(0, 3 - fieldCount); i += 1) pieces.push(blankGridLine());
+  pieces.push(paragraph(" ", {
+    align: "left",
+    indent: false,
+    fontPreset: "body",
+    size: "2",
+    line: String(AGENCY_MARK_Y - 3 * GRID_LINE),
+    lineRule: "exact",
+    snapToGrid: false,
+    before: "0",
+    after: "0",
+  }));
+  return pieces.join("");
+}
+
+function agencyMarkParagraph(text, size = "56") {
   return paragraph(text, {
     align: "center",
     indent: false,
     fontPreset: "title",
     size,
     color: "FF0000",
-    before: AGENCY_FRAME_BEFORE,
-    frame: { hAnchor: "margin", vAnchor: "margin", xAlign: "center", y: AGENCY_FRAME_Y, w: CONTENT_W, h: 800 * Math.max(1, lineCount) },
+    before: "0",
+    // 31pt 行高容 28pt 标志字，字顶偏移仅约 0.5mm；exact + 关网格保证
+    // 不被 28 磅文档网格拉伸。
+    line: "620",
+    snapToGrid: false,
   });
 }
 
-function floatingJointAgencyTable(names, size = "48", includeFile = true) {
+function jointAgencyTable(names, size = "48", includeFile = true) {
+  // 联合行文：主办机关在前、联署机关分行排列；“文件”置右并垂直居中。
+  // 普通（非浮动）表格，位置由正常流决定，紧跟 agencyMarkAnchor。
   const maxNameLength = Math.max(...names.map((name) => [...name].length), 1);
   const rightWidth = includeFile ? 1600 : 0;
   const leftWidth = Math.min(CONTENT_W - rightWidth, Math.max(3600, maxNameLength * 520 + 400));
   const tableWidth = leftWidth + rightWidth;
   const cellMargins = '<w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tcMar>';
-  const lineParagraph = (text) => `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0" w:line="560" w:lineRule="exact"/><w:snapToGrid w:val="true"/><w:kinsoku w:val="true"/></w:pPr>${run(text, { fontPreset: "title", size, color: "FF0000" })}</w:p>`;
+  const lineParagraph = (text) => `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="0" w:line="600" w:lineRule="exact"/><w:snapToGrid w:val="false"/><w:kinsoku w:val="true"/></w:pPr>${run(text, { fontPreset: "title", size, color: "FF0000" })}</w:p>`;
   const leftCell = `<w:tc><w:tcPr><w:tcW w:w="${leftWidth}" w:type="dxa"/><w:vAlign w:val="center"/>${cellMargins}</w:tcPr>${names.map(lineParagraph).join("")}</w:tc>`;
   const rightCell = includeFile
     ? `<w:tc><w:tcPr><w:tcW w:w="${rightWidth}" w:type="dxa"/><w:vAlign w:val="center"/>${cellMargins}</w:tcPr>${lineParagraph("文件")}</w:tc>`
     : "";
-  const tablePr = `<w:tblPr><w:tblpPr w:leftFromText="0" w:rightFromText="0" w:topFromText="0" w:bottomFromText="0" w:vertAnchor="margin" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="${AGENCY_FRAME_Y}"/><w:tblOverlap w:val="never"/><w:tblW w:w="${tableWidth}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
+  const tablePr = `<w:tblPr><w:tblW w:w="${tableWidth}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>`;
   const grid = `<w:gridCol w:w="${leftWidth}"/>${includeFile ? `<w:gridCol w:w="${rightWidth}"/>` : ""}`;
   return `<w:tbl>${tablePr}<w:tblGrid>${grid}</w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>${leftCell}${rightCell}</w:tr></w:tbl>`;
 }
 
-function agencyMarkFlowSpacer(extraDxa = 0) {
-  return paragraph("\u00a0", {
-    align: "left",
-    indent: false,
-    fontPreset: "body",
-    size: "2",
-    line: "560",
-    snapToGrid: false,
-    before: AGENCY_FLOW_BEFORE + extraDxa,
-    after: "0",
-  });
+function headerRedRule() {
+  // 发文字号下 4mm 的红色分隔线（GB/T 9704-2012 7.3.1）。
+  // 用段落底边框 pBdr 而不是 VML 矩形：pBdr 是 Word/WPS/LibreOffice
+  // 和在线预览普遍支持的老式边框机制，宽度自动等于版心 156mm；
+  // 段高固定 226 dxa（4mm）精确给出文号到红线的距离，不受文档网格影响。
+  // sz 单位 1/8 pt，12 = 1.5pt ≈ 0.53mm，落在标准推荐 0.35—0.5mm 上沿。
+  return `<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="0" w:color="FF0000"/></w:pBdr><w:spacing w:before="0" w:after="0" w:line="${DOC_NO_TO_RULE}" w:lineRule="exact"/><w:jc w:val="both"/><w:adjustRightInd w:val="true"/><w:snapToGrid w:val="false"/><w:kinsoku w:val="true"/></w:pPr></w:p>`;
 }
 
-function letterheadReserveParagraph(reserveMm) {
-  const before = Math.round((reserveMm - 37) * 56.692913);
-  return paragraph("\u00a0", {
-    align: "left",
-    indent: false,
-    fontPreset: "body",
-    size: "2",
-    line: "1",
-    snapToGrid: false,
-    before: String(before),
-    after: "0",
-  });
+function letterheadReserveParagraph(reserveMm, fieldCount = 0) {
+  // 预印红头纸预留区：从版心顶起预留 (reserveMm−37)mm，字段已占 n 行。
+  // 用整行空段 + 余量段精确堆叠，不依赖会被行网格吸附的段前距。
+  const total = Math.max(0, Math.round((reserveMm - 37) * MM_TO_DXA) - fieldCount * GRID_LINE);
+  const fullLines = Math.floor(total / GRID_LINE);
+  const remainder = total - fullLines * GRID_LINE;
+  const pieces = [];
+  for (let i = 0; i < fullLines; i += 1) pieces.push(blankGridLine());
+  if (remainder > 0) {
+    pieces.push(paragraph("\u00a0", {
+      align: "left",
+      indent: false,
+      fontPreset: "body",
+      size: "2",
+      line: String(remainder),
+      lineRule: "exact",
+      snapToGrid: false,
+      before: "0",
+      after: "0",
+    }));
+  }
+  return pieces.join("");
 }
 
 function documentNumberParagraph(text, upward = false) {
@@ -304,7 +346,9 @@ function documentNumberParagraph(text, upward = false) {
     indent: false,
     fontPreset: "body",
     size: "32",
-    after: "227",
+    // 与红线的 4mm 间距由 headerRedRule 的固定行高给出，段后距必须为 0，
+    // 否则两处间距叠加（旧实现 after=227 即此问题）。
+    after: "0",
     left: upward ? FIRST_LINE_INDENT : undefined,
   });
 }
@@ -820,14 +864,26 @@ function buildDocument(blocks, args) {
     if (letterhead === "digital" && !args.org) throw new Error("formal digital letterhead requires --org");
     if (args["copy-no"] && !/^\d{1,6}$/.test(String(args["copy-no"]))) throw new Error("--copy-no must contain one to six Arabic digits");
     let headerFieldIndex = 0;
-    if (args["copy-no"]) body.push(floatingHeaderFieldParagraph(String(args["copy-no"]).padStart(6, "0"), "body", headerFieldIndex++));
-    else if (args.secret) body.push(floatingHeaderFieldParagraph("", "body", headerFieldIndex++));
-    if (args.secret) body.push(floatingHeaderFieldParagraph(args.secret, "h1", headerFieldIndex++));
-    if (args.urgent) body.push(floatingHeaderFieldParagraph(args.urgent, "h1", headerFieldIndex++));
+    if (args["copy-no"]) {
+      body.push(cornerFieldParagraph(String(args["copy-no"]).padStart(6, "0"), "body"));
+      headerFieldIndex += 1;
+    } else if (args.secret) {
+      body.push(cornerFieldParagraph("", "body"));
+      headerFieldIndex += 1;
+    }
+    if (args.secret) {
+      body.push(cornerFieldParagraph(args.secret, "h1"));
+      headerFieldIndex += 1;
+    }
+    if (args.urgent) {
+      body.push(cornerFieldParagraph(args.urgent, "h1"));
+      headerFieldIndex += 1;
+    }
     if (letterhead === "digital" && args.org) {
-      // GB/T 9704-2012 7.2.4 fixes the agency mark at 35 mm below the
-      // type-area top. Left-corner fields occupy their own column and must
-      // not move the centered mark upward.
+      // GB/T 9704-2012 7.2.4：机关标志上边缘距版心顶 35mm。anchor 段以
+      // 动态段前距把标志钉在 35mm，左上字段占几行都不影响标志位置；
+      // 全程正常文档流，不使用浮动框，弱渲染器（在线预览等）也不会错位。
+      body.push(agencyMarkAnchor(headerFieldIndex));
       const jointOrganizations = Array.isArray(args["joint-org"]) ? args["joint-org"].map((name) => String(name).trim()).filter(Boolean) : [];
       const agencyNames = [String(args.org).trim(), ...jointOrganizations];
       // GB/T 9704-2012 7.2.4 keeps joint agency names in order with the
@@ -838,9 +894,8 @@ function buildDocument(blocks, args) {
         ? [host.slice(0, -2), ...jointOrganizations]
         : agencyNames;
       const agencyMarkSize = agencyNames.length > 1 ? (Math.max(...jointNames.map((name) => [...name].length)) > 10 ? "44" : "48") : "56";
-      if (jointOrganizations.length) body.push(floatingJointAgencyTable(jointNames, agencyMarkSize, host.endsWith("文件")));
-      else body.push(floatingAgencyMarkParagraph(agencyNames.join("　"), 1, agencyMarkSize));
-      body.push(agencyMarkFlowSpacer(jointOrganizations.length ? Math.max(0, jointNames.length - 1) * 560 : 0));
+      if (jointOrganizations.length) body.push(jointAgencyTable(jointNames, agencyMarkSize, host.endsWith("文件")));
+      else body.push(agencyMarkParagraph(agencyNames.join("　"), agencyMarkSize));
       if (args["doc-no"]) body.push(...blankGridLines(2));
     }
     if (letterhead === "preprinted") {
@@ -849,7 +904,7 @@ function buildDocument(blocks, args) {
       // The physical red-head paper already contains the agency mark and
       // separator. Its reserve is a paper-coordinate boundary, so optional
       // copy/secret/urgency fields must not shorten it.
-      body.push(letterheadReserveParagraph(reserve));
+      body.push(letterheadReserveParagraph(reserve, headerFieldIndex));
       // The preprinted paper supplies the agency mark and separator. Keep the
       // variable document number below the reserved mark block by preserving
       // the same two 28-point grid lines used under a digital agency mark.
@@ -858,7 +913,7 @@ function buildDocument(blocks, args) {
     if (args["doc-no"]) args["doc-no"] = normalizeDocumentNumber(args["doc-no"]);
     if (upward && args["doc-no"] && args.signer) body.push(upwardHeaderParagraph(args["doc-no"], args.signer));
     else if (args["doc-no"]) body.push(documentNumberParagraph(args["doc-no"], upward));
-    if (letterhead === "digital" || args["preprinted-rule"] === "true") body.push(redRule());
+    if (letterhead === "digital" || args["preprinted-rule"] === "true") body.push(headerRedRule());
     titleGapLines = 2;
   } else if (format === "letter") {
     if (!args.org) throw new Error("letter format requires --org");

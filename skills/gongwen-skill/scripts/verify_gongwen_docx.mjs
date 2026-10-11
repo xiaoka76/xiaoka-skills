@@ -148,36 +148,44 @@ if (horizontal) {
 if (profile === "formal") {
   if (args.letterhead === "digital") {
     check("Digital red head", /w:color w:val="FF0000"/.test(doc), "digital formal output contains requested red elements");
-    check("Red rule thickness", /height:0\.5mm/.test(doc), "header separator uses the recommended 0.35-0.5 mm range");
-    check("Red rule width", /style="width:156mm;height:0\.5mm"/.test(doc), "header separator spans the 156 mm type area");
+    // 红色分隔线改为段落底边框（pBdr）：sz 8-12（0.35-0.53mm）、
+    // 全段宽=版心 156mm，Word/WPS/LibreOffice/在线预览行为一致。
+    check("Red rule via paragraph border", /<w:pBdr>\s*<w:bottom w:val="single" w:sz="(?:8|1[02])" w:space="0" w:color="FF0000"\/>\s*<\/w:pBdr>/.test(doc), "header separator is a pBdr border spanning the type area (renderer-independent)");
+    check("Red rule 4 mm below document number", /w:line="22[67]" w:lineRule="exact"/.test(doc), "separator sits exactly 4 mm below the document number");
     const docParagraphs = paragraphs(doc);
     const agencyIndex = docParagraphs.findIndex((p) => /w:sz w:val="(?:56|48|44)"/.test(p) && /w:color w:val="FF0000"/.test(p));
-    const jointAgencyTable = doc.match(/<w:tbl>[\s\S]*?<w:tblpPr[^>]*w:vertAnchor="margin"[^>]*w:horzAnchor="margin"[^>]*w:tblpXSpec="center"[^>]*w:tblpY="1984"[\s\S]*?<\/w:tbl>/)?.[0] ?? "";
-    // Keep this expected value independent from the generator's calibration
-    // constants. It is 35 mm in twentieths of a point, as required by 7.2.4.
+    // 联合行文表只在版头区域（标题之前）查找，避免误匹配文末版记红表。
+    const titlePosForHeader = doc.indexOf('w:pStyle w:val="GongwenTitle"');
+    const headerAreaXmlForJoint = titlePosForHeader >= 0 ? doc.slice(0, titlePosForHeader) : doc;
+    const jointAgencyTable = headerAreaXmlForJoint.match(/<w:tbl>(?:(?!<\/w:tbl>)[\s\S])*?<w:color w:val="FF0000"(?:(?!<\/w:tbl>)[\s\S])*?<\/w:tbl>/)?.[0] ?? "";
+    // 版头区域（标题之前）不得再出现浮动框 / 浮动表，标志与字段全在正常流里。
+    const titlePos = doc.indexOf('w:pStyle w:val="GongwenTitle"');
+    const headerAreaXml = titlePos >= 0 ? doc.slice(0, titlePos) : doc;
+    check("Red head uses in-flow layout (no floating frames)", !/w:framePr/.test(headerAreaXml) && !/w:tblpPr/.test(headerAreaXml), "agency mark and corner fields are normal-flow elements, so previewers cannot overlap them");
+    // GB/T 9704-2012 7.2.4：机关标志上边缘距版心顶 35mm（1984 dxa）。
+    // 纯流锚定：标志之前的字段行/整行空段各 560，末尾余量段 304，
+    // 行高累加恒为 3×560+304=1984，不使用会被网格吸附的段前距。
     const agencyOffsetFromTypeAreaTop = Math.round(35 * 56.692913);
-    const agencyFrameOk = agencyIndex >= 0
-      && new RegExp(`w:framePr[^>]*w:hAnchor="margin"[^>]*w:vAnchor="margin"[^>]*w:xAlign="center"[^>]*w:y="${agencyOffsetFromTypeAreaTop}"`).test(docParagraphs[agencyIndex])
-      && /w:before="0"/.test(docParagraphs[agencyIndex]);
-    const jointAgencyFrameOk = Boolean(jointAgencyTable) && new RegExp(`w:tblpY="${agencyOffsetFromTypeAreaTop}"`).test(jointAgencyTable);
-    check("Digital red-head agency position", agencyFrameOk || jointAgencyFrameOk, "agency mark is independently fixed 35 mm below the type-area top");
+    const paragraphsBeforeMark = agencyIndex >= 0 ? docParagraphs.slice(0, agencyIndex) : [];
+    const lineHeightsBeforeMark = paragraphsBeforeMark.map((p) => Number((p.match(/<w:spacing[^>]*w:line="(\d+)"[^>]*w:lineRule="exact"/) ?? [])[1])).filter(Number.isFinite);
+    const anchorHeight = lineHeightsBeforeMark.reduce((a, b) => a + b, 0);
+    const hasRemainderLine = lineHeightsBeforeMark.some((v) => v > 0 && v < 560);
+    const allExactNoGrid = paragraphsBeforeMark.every((p) => /w:lineRule="exact"/.test(p) && /w:snapToGrid w:val="false"/.test(p) && !/w:framePr/.test(p));
+    const markFollowsAnchor = agencyIndex >= 0;
+    const agencyAnchorOk = markFollowsAnchor && hasRemainderLine && allExactNoGrid
+      && Math.abs(anchorHeight - agencyOffsetFromTypeAreaTop) <= 2;
+    check("Digital red-head agency position", agencyAnchorOk, `exact in-flow spacing before agency mark totals 35 mm (got ${(anchorHeight / 56.692913).toFixed(1)} mm), regardless of corner fields`);
     if (jointAgencyTable) {
       const jointRows = (jointAgencyTable.match(/<w:p>/g) ?? []).length;
       const hasFileCell = /<w:t[^>]*>文件<\/w:t>/.test(jointAgencyTable);
       const centeredCells = (jointAgencyTable.match(/w:vAlign w:val="center"/g) ?? []).length;
-      check("Joint agency vertical layout", jointRows >= 2 && centeredCells >= (hasFileCell ? 2 : 1) && /w:color w:val="FF0000"/.test(jointAgencyTable), hasFileCell ? "joint names are stacked and 文件 is vertically centered in a right-side cell" : "joint names are stacked and vertically centered");
+      check("Joint agency vertical layout", !/w:tblpPr/.test(jointAgencyTable) && jointRows >= 2 && centeredCells >= (hasFileCell ? 2 : 1) && /w:color w:val="FF0000"/.test(jointAgencyTable), hasFileCell ? "joint names are stacked in-flow and 文件 is vertically centered in a right-side cell" : "joint names are stacked and vertically centered");
     }
-    const fixedHeaderFrames = docParagraphs
-      .filter((p) => /w:framePr[^>]*w:hAnchor="margin"[^>]*w:vAnchor="margin"/.test(p))
-      .map((p) => Number((p.match(/w:y="(\d+)"/) ?? [])[1]))
-      .filter((value) => Number.isFinite(value));
-    check("Digital red-head field frames", fixedHeaderFrames.every((value, index) => value === index * 560 || value === agencyOffsetFromTypeAreaTop), "left-corner fields use first-line grid positions without changing the agency mark anchor");
     const docNoIndex = docParagraphs.findIndex((p) => /〔\d{4}〕[1-9]\d*号/.test(textOf(p)));
-    const agencyBoundary = agencyIndex >= 0 ? agencyIndex + 1 : jointAgencyTable ? 0 : -1;
+    const agencyBoundary = agencyIndex >= 0 ? agencyIndex + 1 : -1;
     const agencyToDocNo = agencyBoundary >= 0 && docNoIndex > agencyBoundary ? docParagraphs.slice(agencyBoundary, docNoIndex) : [];
-    const agencyFlowSpacer = agencyToDocNo.filter((p) => /w:before="[1-9]\d*"/.test(p) && /w:snapToGrid w:val="false"/.test(p));
     const agencyGapLines = agencyToDocNo.slice(-2);
-    check("Agency mark to document number two blank lines", docNoIndex < 0 || (agencyFlowSpacer.length === 1 && agencyGapLines.length === 2 && agencyGapLines.every(isExplicitBlankGridLine)), "document number follows the fixed agency mark with two exact 28-point grid lines");
+    check("Agency mark to document number two blank lines", docNoIndex < 0 || (agencyGapLines.length === 2 && agencyGapLines.every(isExplicitBlankGridLine)), "document number follows the agency mark with two exact 28-point grid lines");
     check("Two blank lines below red rule", hasExplicitTwoLineTitleGap, "title is preceded by two exact 28-point blank paragraphs below the red rule");
     if (docNoIndex >= 0) check("Document number syntax", /〔\d{4}〕[1-9]\d*号/.test(textOf(docParagraphs[docNoIndex])) && !/第/.test(textOf(docParagraphs[docNoIndex])), "year uses full digits, sequence has no 第 or leading zero, and ends with 号");
     if (args.upward === "true") {
@@ -185,22 +193,21 @@ if (profile === "formal") {
     }
   } else {
     const preprintedParagraphs = paragraphs(doc);
-    const reserveCandidate = (p) => /w:jc w:val="left"/.test(p)
-      && /w:line="1"/.test(p)
-      && /w:lineRule="exact"/.test(p)
-      && /w:snapToGrid w:val="false"/.test(p)
-      && /w:sz w:val="2"/.test(p)
-      && /<w:t[^>]*> <\/w:t>/.test(p);
-    const reserveIndex = preprintedParagraphs.findIndex(reserveCandidate);
-    const reserveParagraph = reserveIndex >= 0 ? preprintedParagraphs[reserveIndex] : "";
-    const reserveSpacing = reserveParagraph.match(/<w:spacing\b[^>]*>/)?.[0] ?? "";
-    const reserveBefore = Number((reserveSpacing.match(/w:before="(\d+)"/) ?? [])[1]);
-    const reserveBeforeInRange = Number.isFinite(reserveBefore) && reserveBefore >= 0 && reserveBefore <= Math.round((130 - 37) * 56.692913);
-    const priorParagraphsAreFloating = reserveIndex >= 0 && preprintedParagraphs.slice(0, reserveIndex).every((p) => /w:framePr\b/.test(p));
-    const preprintedReserveParagraph = reserveIndex >= 0
-      && priorParagraphsAreFloating
-      && reserveBeforeInRange;
-    check("Preprinted letterhead reserve", preprintedReserveParagraph, "first non-floating body paragraph reserves 37-130 mm paper-top agency-mark space");
+    const preDocNoIndex = preprintedParagraphs.findIndex((p) => /〔\d{4}〕[1-9]\d*号/.test(textOf(p)));
+    // 预留区改为整行空段 + 余量段的精确堆叠：累加文号前所有空段行高，
+    // 扣除红线下空二行（1120）后应落在 0—93mm（37—130mm 纸样区间）。
+    const spacerHeight = (p) => Number((p.match(/<w:spacing[^>]*w:line="(\d+)"[^>]*w:lineRule="exact"/) ?? [])[1]);
+    const spacersBeforeDocNo = preDocNoIndex >= 0
+      ? preprintedParagraphs.slice(0, preDocNoIndex)
+        .filter((p) => /w:sz w:val="2"/.test(p) && /w:snapToGrid w:val="false"/.test(p) && !/w:framePr/.test(p))
+        .map(spacerHeight).filter(Number.isFinite)
+      : [];
+    const reserveTotal = spacersBeforeDocNo.reduce((a, b) => a + b, 0) - 1120;
+    const preprintedReserveParagraph = preDocNoIndex >= 0
+      && spacersBeforeDocNo.length >= 2
+      && reserveTotal >= 0
+      && reserveTotal <= Math.round((130 - 37) * 56.692913);
+    check("Preprinted letterhead reserve", preprintedReserveParagraph, `in-flow exact-line stack reserves 37-130 mm paper-top space (got ${(reserveTotal / 56.692913 + 37).toFixed(0)} mm paper coordinate)`);
     const titleXmlStart = firstTitleIndex < 0 ? doc.length : doc.indexOf(preprintedParagraphs[firstTitleIndex]);
     const preprintedHeaderXml = titleXmlStart < 0 ? doc : doc.slice(0, titleXmlStart);
     check("No red drawing for preprinted letterhead", !/w:color w:val="FF0000"/.test(preprintedHeaderXml), "preprinted mode does not redraw red letterhead or rule");
