@@ -91,6 +91,12 @@ const FONT = {
   h1: { eastAsia: preferredFont(["方正黑体", "黑体", "SimHei", "Heiti SC", "STHeiti"], "Heiti SC"), ascii: "Times New Roman", cs: "Times New Roman" },
   h2: { eastAsia: preferredFont(["楷体", "楷体_GB2312", "KaiTi", "Kaiti SC", "STKaiti"], "Kaiti SC"), ascii: "Times New Roman", cs: "Times New Roman" },
   song: { eastAsia: preferredFont(["Songti SC", "宋体", "SimSun"], "Songti SC"), ascii: "Times New Roman", cs: "Times New Roman" },
+  // GB/T 9704-2012 7.3.5: 页码数字用 4 号半角宋体。ascii/hAnsi 也必须指向
+  // 宋体系字体，否则 PAGE 域里的阿拉伯数字会按 Times New Roman 渲染。
+  pagenum: (() => {
+    const song = preferredFont(["宋体", "SimSun", "方正书宋简体", "Songti SC"], "SimSun");
+    return { eastAsia: song, ascii: song, hAnsi: song, cs: song };
+  })(),
 };
 
 const STANDARD_FONT_CANDIDATES = {
@@ -428,11 +434,13 @@ function h2(text) {
 }
 
 function h3(text) {
+  // 三级层次（1. 开头）在公文中是正文的一部分，且常连续多条出现。
+  // 不加 keepNext：连续条目各自 keepNext 会首尾互锁成不可拆分的整块，
+  // 页底放不下时整节被推到下一页，留下大片空白。
   return paragraph(text, {
     align: "left",
     fontPreset: "body",
     size: "32",
-    keepNext: true,
     before: "40",
     after: "0",
     style: "Heading3",
@@ -441,11 +449,11 @@ function h3(text) {
 }
 
 function h4(text) {
+  // 四级层次（（1）开头）同理，不挂 keepNext。
   return paragraph(text, {
     align: "left",
     fontPreset: "body",
     size: "32",
-    keepNext: true,
     before: "0",
     after: "0",
     style: "Heading4",
@@ -514,19 +522,23 @@ function signatureParagraphs(args) {
     if (args.date) lines.push(rightWithIndent(args.date, FOUR_CHAR_RIGHT_INDENT));
     return lines;
   }
+  // 默认（不盖章、不签签名章）按 GB/T 9704-2012 7.3.5.1：
+  // 成文日期右空四字编排；发文机关署名在成文日期之上，以成文日期
+  // 为准居中编排。此前实现为两者左对齐且只右空二字，右端参差，不符合标准。
   if (!args.sender && !args.date) return [];
-  if (!args.sender || !args.date) return [right(args.sender || args.date)];
+  if (!args.sender || !args.date) {
+    return [rightWithIndent(args.sender || args.date, FOUR_CHAR_RIGHT_INDENT)];
+  }
   const senderWidth = estimatedTextWidthDxa(args.sender);
   const dateWidth = estimatedTextWidthDxa(args.date);
-  let senderRight = FIRST_LINE_INDENT;
-  let dateRight = Math.max(0, senderWidth - dateWidth);
-  if (dateWidth > senderWidth) {
-    dateRight = FIRST_LINE_INDENT;
-    senderRight = dateWidth - senderWidth + FIRST_LINE_INDENT;
-  }
+  // jc=right 时段落右端 = 版心右边界 - rightIndent。让署名中心线与
+  // 日期中心线重合：senderRight = dateRight + dateWidth - senderWidth，
+  // 再整体右移 (senderWidth-dateWidth)/2 等价于下式。
+  const dateRight = FOUR_CHAR_RIGHT_INDENT;
+  const senderRight = Math.max(0, Math.round(dateRight + (dateWidth - senderWidth) / 2));
   return [
-    paragraph(args.sender, { align: "right", indent: false, right: String(senderRight) }),
-    paragraph(args.date, { align: "right", indent: false, right: String(dateRight) }),
+    rightWithIndent(args.sender, senderRight),
+    rightWithIndent(args.date, dateRight),
   ];
 }
 
@@ -768,8 +780,11 @@ function resolvePageNumberMode(args, format) {
   if (args["no-page-number"] || args["no-page-numbers"]) return "none";
   if (["center", "standard", "none"].includes(args["page-number"])) return args["page-number"];
   if (format === "letter") return "none";
-  if (format === "formal" || format === "command" || format === "minutes" || format === "horizontal-table") return "standard";
-  return "center";
+  // GB/T 9704-2012 7.3.5：页码用 4 号半角宋体阿拉伯数字，单页码居右
+  // 空一字、双页码居左空一字。信函格式不排页码；除信函外的所有格式
+  // （含普通材料 ordinary）默认均按此单双页规则编排，居中页码需显式
+  // 传 --page-number center。
+  return "standard";
 }
 
 function buildDocument(blocks, args) {
@@ -884,6 +899,16 @@ function buildDocument(blocks, args) {
   if (args.date) args.date = normalizeChineseDate(args.date);
   if (args["print-date"]) args["print-date"] = normalizeChineseDate(args["print-date"], "--print-date", true);
   if (title) {
+    // 二号标题在 156mm 版心内一行约排 20 个全角字。超长且未手动折行时，
+    // 自动换行容易把标题断成“孤字”行（如只剩一个“报”字），提示用户
+    // 在 --title 中直接传入换行符手动均衡分行（run() 会将 \n 渲染为断行）。
+    const titleWidth = [...title].reduce(
+      (sum, ch) => sum + (/^[\x00-\x7f]$/.test(ch) ? 0.5 : 1),
+      0,
+    );
+    if (titleWidth > 20 && !title.includes("\n")) {
+      console.error(`TITLE WARNING: 标题约 ${titleWidth.toFixed(1)} 个全角字，二号字一行排不下，自动折行可能出现孤字行。建议在 --title 中用换行手动均衡分行。`);
+    }
     if (titleGapLines) body.push(...blankGridLines(titleGapLines));
     body.push(titleParagraph(title));
   }
@@ -946,9 +971,9 @@ function buildDocument(blocks, args) {
 }
 
 function stylesXml() {
-  const style = (id, name, preset, size, outline, before = "0") => `<w:style w:type="paragraph" w:customStyle="1" w:styleId="${id}"><w:name w:val="${name}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:ind w:firstLine="640"/><w:outlineLvl w:val="${outline}"/><w:spacing w:before="${before}" w:after="0" w:line="560" w:lineRule="exact"/></w:pPr><w:rPr><w:rFonts ${fontAttrs({ fontPreset: preset })}/><w:color w:val="000000"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:style>`;
+  const style = (id, name, preset, size, outline, before = "0", keepNext = true) => `<w:style w:type="paragraph" w:customStyle="1" w:styleId="${id}"><w:name w:val="${name}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr>${keepNext ? "<w:keepNext/>" : ""}<w:ind w:firstLine="640"/><w:outlineLvl w:val="${outline}"/><w:spacing w:before="${before}" w:after="0" w:line="560" w:lineRule="exact"/></w:pPr><w:rPr><w:rFonts ${fontAttrs({ fontPreset: preset })}/><w:color w:val="000000"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:style>`;
   const title = `<w:style w:type="paragraph" w:customStyle="1" w:styleId="GongwenTitle"><w:name w:val="公文标题"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:jc w:val="center"/><w:spacing w:before="0" w:after="560" w:line="560" w:lineRule="exact"/></w:pPr><w:rPr><w:rFonts ${fontAttrs({ fontPreset: "title" })}/><w:sz w:val="44"/><w:szCs w:val="44"/></w:rPr></w:style>`;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts ${fontAttrs({ fontPreset: "body" })}/><w:color w:val="000000"/><w:sz w:val="32"/><w:szCs w:val="32"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="0" w:line="560" w:lineRule="exact"/><w:adjustRightInd w:val="true"/><w:snapToGrid w:val="true"/><w:kinsoku w:val="true"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:rPr><w:rFonts ${fontAttrs({ fontPreset: "body" })}/><w:sz w:val="32"/><w:szCs w:val="32"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:style>${title}${style("Heading1", "标题 1", "h1", "32", 0, "160")}${style("Heading2", "标题 2", "h2", "32", 1, "80")}${style("Heading3", "标题 3", "body", "32", 2, "40")}${style("Heading4", "标题 4", "body", "32", 3)}</w:styles>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts ${fontAttrs({ fontPreset: "body" })}/><w:color w:val="000000"/><w:sz w:val="32"/><w:szCs w:val="32"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="0" w:line="560" w:lineRule="exact"/><w:adjustRightInd w:val="true"/><w:snapToGrid w:val="true"/><w:kinsoku w:val="true"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/><w:rPr><w:rFonts ${fontAttrs({ fontPreset: "body" })}/><w:sz w:val="32"/><w:szCs w:val="32"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr></w:style>${title}${style("Heading1", "标题 1", "h1", "32", 0, "160", true)}${style("Heading2", "标题 2", "h2", "32", 1, "80", true)}${style("Heading3", "标题 3", "body", "32", 2, "40", false)}${style("Heading4", "标题 4", "body", "32", 3, "0", false)}</w:styles>`;
 }
 
 function fontDef(name, altName, family = "roman", charset = "86") {
@@ -986,7 +1011,7 @@ function fontTableXml() {
 }
 
 function footerXml(align = "center") {
-  const pageRunProps = `<w:rPr><w:rFonts ${fontAttrs({ fontPreset: "song" })}/><w:sz w:val="28"/><w:szCs w:val="28"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr>`;
+  const pageRunProps = `<w:rPr><w:rFonts ${fontAttrs({ fontPreset: "pagenum" })}/><w:sz w:val="28"/><w:szCs w:val="28"/><w:lang w:val="en-US" w:eastAsia="zh-CN"/></w:rPr>`;
   const sideIndent = align === "right"
     ? '<w:ind w:right="280"/>'
     : align === "left"

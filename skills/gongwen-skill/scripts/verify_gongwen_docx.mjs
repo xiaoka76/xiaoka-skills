@@ -109,12 +109,29 @@ const firstTitleIndex = paragraphs(doc).findIndex((p) => /w:pStyle w:val="Gongwe
 const titlePrecedingParagraphs = firstTitleIndex < 0 ? [] : paragraphs(doc).slice(0, firstTitleIndex);
 const titleGapParagraphs = titlePrecedingParagraphs.slice(-2);
 const hasExplicitTwoLineTitleGap = titleGapParagraphs.length === 2 && titleGapParagraphs.every(isExplicitBlankGridLine);
-check("Title has two explicit blank grid lines", !["formal", "letter"].includes(profile) || hasExplicitTwoLineTitleGap, "title is preceded by two exact 28-point blank paragraphs");
+if (["formal", "letter"].includes(profile)) {
+  check("Title has two explicit blank grid lines", hasExplicitTwoLineTitleGap, "title is preceded by two exact 28-point blank paragraphs");
+}
 if (/附件：/.test(textOf(doc))) check("Attachment-note continuation indent", /w:firstLine="-960"[^>]*w:left="1600"/.test(doc), "附件说明回行与名称首字对齐");
+
+// GB/T 9704-2012 7.3.5：页码用 4 号半角宋体阿拉伯数字。PAGE 域数字按
+// run 的 ascii/hAnsi 字体渲染，若指向 Times New Roman，在 Word 中数字
+// 就会是西文字体，不符合国标。凡含 PAGE 域的页脚都必须是宋体系字体。
+const pageFooters = [footerCenter, footerOdd, footerEven].filter((f) => f && /w:instr="PAGE"/.test(f));
+const SONG_FONT = /(?:宋体|SimSun|书宋|Songti)/i;
+for (const footer of pageFooters) {
+  check("Page number uses Song-style font (no Times New Roman digits)", !/w:ascii="Times New Roman"/.test(footer) && SONG_FONT.test(footer), "PAGE field digits must use a Song-style font");
+}
 
 if (profile === "ordinary") {
   check("No formal red-head drawing", !/w:color w:val="FF0000"/.test(doc), "ordinary output has no red head or red rule");
-  check("Centered layout footer", /w:jc w:val="center"/.test(footerCenter) && /w:instr="PAGE"/.test(footerCenter), "ordinary output uses centered page number");
+  if (footerCenter && /w:instr="PAGE"/.test(footerCenter)) {
+    check("Centered layout footer (explicit --page-number center)", /w:jc w:val="center"/.test(footerCenter), "explicit centered page number");
+  } else {
+    check("Odd/even page fields", /w:instr="PAGE"/.test(footerOdd) && /w:instr="PAGE"/.test(footerEven), "ordinary output defaults to odd-right/even-left page numbers (use --page-number center to override)");
+    check("Odd/even page positions", /w:jc w:val="right"/.test(footerOdd) && /w:jc w:val="left"/.test(footerEven), "odd right and even left");
+    check("Page-number distance", /w:footer="1134"/.test(doc), "page number sits 7 mm below the type area");
+  }
 } else if (profile === "letter") {
   check("Letter first-page page number", !footerCenter && !footerOdd && !footerEven && !/w:instr="PAGE"/.test(footerLetter), "letter output suppresses page numbers");
   check("Letter upper red double rule", (footerLetter.match(/w:fill="FF0000"/g) ?? []).length >= 2 && /w:tblW[^>]*w:w="9638"/.test(doc), "letter output contains 170 mm red double rules");

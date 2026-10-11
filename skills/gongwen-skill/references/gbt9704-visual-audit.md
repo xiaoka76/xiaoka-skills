@@ -20,7 +20,7 @@ bash tests/visual-audit.sh /tmp/gongwen-visual-audit-all-rules
 
 | 场景 | 截图 | 实际观察 |
 | --- | --- | --- |
-| 普通材料 | `ordinary-1.png` | 有 A4 版心、正文和居中页码，没有机关标志或红线；仅提供机构名称不会自动变红头。 |
+| 普通材料 | `ordinary-1.png` | 有 A4 版心、正文，没有机关标志或红线；仅提供机构名称不会自动变红头。注：此截图为旧版本（普通稿当时默认居中页码）；现行默认已与正式公文一致，单页右、双页左，居中需显式 `--page-number center`。 |
 | 完整电子红头 | `formal-digital-all-1.png`、`formal-digital-all-2.png` | 份号、密级、紧急程度在左上；机关标志固定在版心上边缘下 35 mm 的首面位置；文号、红线、红线下两行空白、标题、主送机关和首页正文连续出现。字段不会再把机关标志向下推移。 |
 | 上行文 | `formal-digital-upward-1.png` | 文号和签发人同一行，两个签发人可见；第二页页码移到左侧。 |
 | 预印红头纸套打 | `formal-preprinted-1.png`、`formal-preprinted-2.png` | DOCX 不绘制红色机关标志和红线；左上黑色字段固定在首面，文号和标题从预留区域之后开始。红线必须由实际红头纸提供。 |
