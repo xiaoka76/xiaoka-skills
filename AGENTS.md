@@ -32,6 +32,7 @@ skills/<skill-name>/
 |----------|------|------|
 | `byted-web-search` | 火山引擎豆包搜索（Custom/Global 双引擎，含图搜图） | `python3 scripts/web_search.py` |
 | `seedream-image` | Seedream 5.0 Pro 图像生成（文生图/图生图/图层拆分/透明背景/标记预览/生成记录） | `seedream draw` · `edit` · `split` · `cutout` · `mark` · `ls` · `show` · `replay` |
+| `gongwen-skill` | 公文排版 DOCX 生成（GB/T 9704-2012；复制自 mizzlelover/gongwen-gbt9704-skill，MIT） | `node scripts/generate_gongwen_docx.mjs` |
 
 ## Agent 交互规则
 
@@ -41,6 +42,7 @@ skills/<skill-name>/
 
 - **联网搜索** → `skills/byted-web-search/`（默认 Custom 版；海外/图搜图用 `--engine global`）
 - **图像生成** → `skills/seedream-image/`
+- **公文排版（公文 DOCX 生成）** → `skills/gongwen-skill/`（GB/T 9704-2012；第三方技能镜像，MIT）
 - 更多技能待添加
 
 ### 2. 技能清单 (`SKILL.md`)

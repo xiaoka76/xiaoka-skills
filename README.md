@@ -126,12 +126,44 @@ seedream mark ./photo.png --box 980,640,1180,860 --plain -o ./marked.png
 
 ---
 
+### 公文排版 — `gongwen-skill`
+
+按《党政机关公文格式》（GB/T 9704-2012）把中文正式材料生成可直接交付的公文 DOCX：版心、字体、标题层级、文号、页码、附件、版记，支持**预印红头纸套打 / 完整电子红头**、联合行文，以及信函 / 命令（令）/ 纪要 / 横排表格四种专门版式。
+
+> 本技能复制自上游开源项目 [mizzlelover/gongwen-gbt9704-skill](https://github.com/mizzlelover/gongwen-gbt9704-skill)（MIT License，Copyright © 2026 mizzlelover），快照 v2.0.0；本副本仅改名为 `gongwen-skill` 并注明来源，其余内容与原版一致。
+
+**核心能力：**
+- 普通稿（`ordinary`）：A4、156mm×225mm 版心、三号仿宋正文、小标宋二号标题、四级标题层次
+- 正式发文（`formal`）：默认预印红头纸套打；`--letterhead digital` 生成完整电子红头；文号 / 签发人 / 份号 / 密级 / 紧急程度按标准定位
+- 专门版式：信函 `letter` / 命令（令）`command` / 纪要 `minutes` / 横排表格 `horizontal-table`
+- 联合行文（`--joint-org`）、分离装订附件（`--attachment-detached`）、版记（抄送 / 印发）、单双页页码、Word/WPS 可更新目录
+- 内置独立校验器；文号与日期写法有合法性拦截，输出后可直接自检
+
+**快速开始：**（需要 Node.js 与本机 `zip` / `unzip`；输出完全保真需目标机装有方正小标宋 + 仿宋系字体，缺失时会明确警告并替代）
+
+```bash
+# 进入技能目录
+cd skills/gongwen-skill
+
+# 普通稿：生成 + 校验
+node scripts/generate_gongwen_docx.mjs --input 草稿.md --output /tmp/gongwen.docx --format ordinary --title "文档标题"
+node scripts/verify_gongwen_docx.mjs --input /tmp/gongwen.docx --profile ordinary
+
+# 正式发文（预印红头纸套打；72mm 为默认留白起点，可按实际纸样调 37–130mm）
+node scripts/generate_gongwen_docx.mjs --input 草稿.md --output /tmp/formal.docx --format formal --letterhead preprinted --letterhead-reserve-mm 72 --org "发文机关名称" --doc-no "单位发〔2026〕1号" --title "文档标题"
+```
+
+详细用法请参阅 [SKILL.md](skills/gongwen-skill/SKILL.md)（含全部参数、边界与验证方法）。
+
+---
+
 ## 项目结构
 
 ```
 xiaoka-skills/
 ├── skills/                  # 技能目录
 │   ├── byted-web-search/    # 火山引擎豆包搜索（Custom/Global 双引擎）
+│   ├── gongwen-skill/       # 公文排版（GB/T 9704-2012 DOCX 生成；复制自 mizzlelover/gongwen-gbt9704-skill）
 │   └── seedream-image/      # 图像生成技能
 │       ├── SKILL.md         # 技能清单
 │       ├── pyproject.toml   # 包配置
