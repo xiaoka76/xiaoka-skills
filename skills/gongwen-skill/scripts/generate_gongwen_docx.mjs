@@ -513,9 +513,10 @@ function rightWithIndent(text, rightIndent) {
   return paragraph(text, { align: "right", indent: false, right: String(rightIndent) });
 }
 
-function redRule(thickness = "5") {
+function colophonRule(thickness = "thick") {
+  // 版记分隔线为黑色（GB/T 9704-2012 7.4.1；红色仅用于版头分隔线）。
   const height = thickness === "thick" ? "0.35mm" : thickness === "thin" ? "0.25mm" : "0.5mm";
-  return `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="80" w:lineRule="exact"/></w:pPr><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" style="width:156mm;height:${height}" fillcolor="#FF0000" stroked="f"/></w:pict></w:r></w:p>`;
+  return `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="80" w:lineRule="exact"/></w:pPr><w:r><w:rPr><w:color w:val="000000"/></w:rPr><w:pict><v:rect xmlns:v="urn:schemas-microsoft-com:vml" style="width:156mm;height:${height}" fillcolor="#000000" stroked="f"/></w:pict></w:r></w:p>`;
 }
 
 function mmToDxa(mm) {
@@ -592,7 +593,7 @@ function colophonTextRow(text, align = "left") {
 
 function colophonRuleRow(thickness) {
   const heightMm = thickness === "thick" ? "0.35" : "0.25";
-  return `<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="${mmToDxa(heightMm)}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="${CONTENT_W}" w:type="dxa"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tcMar></w:tcPr>${redRule(thickness)}</w:tc></w:tr>`;
+  return `<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="${mmToDxa(heightMm)}" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="${CONTENT_W}" w:type="dxa"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tcMar></w:tcPr>${colophonRule(thickness)}</w:tc></w:tr>`;
 }
 
 function colophon(args) {
@@ -1081,7 +1082,10 @@ function letterFooterXml() {
 
 function settingsXml(pageNumberMode) {
   const evenOdd = pageNumberMode === "standard" ? "<w:evenAndOddHeaders/>" : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${evenOdd}<w:updateFields w:val="true"/></w:settings>`;
+  // 不写 <w:updateFields/>：该标志会让 Word 打开时询问「是否更新域」
+  // （“该文档包含的域可能引用了其他文件…”）。本工具只产生页码域，
+  // 页码由排版引擎实时计算，无需在打开时批量更新。
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${evenOdd}</w:settings>`;
 }
 
 function documentRelsXml(pageNumberMode, format) {

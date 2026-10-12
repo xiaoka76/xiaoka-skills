@@ -43,6 +43,7 @@ const footerOdd = readPart(args.input, "word/footerOdd.xml", true);
 const footerEven = readPart(args.input, "word/footerEven.xml", true);
 const footerCenter = readPart(args.input, "word/footerCenter.xml", true);
 const footerLetter = readPart(args.input, "word/footerLetter.xml", true);
+const settings = readPart(args.input, "word/settings.xml", true);
 const requireStandardFonts = args["require-standard-fonts"] === true;
 const installedFonts = (() => {
   try {
@@ -78,6 +79,7 @@ check("A4 page size", horizontal ? /<w:pgSz[^>]*w:w="16838"[^>]*w:h="11906"[^>]*
 const expectedTopMargin = profile === "letter" ? "1701" : "2098";
 check("Page margins", new RegExp(`<w:pgMar[^>]*w:top="${expectedTopMargin}"[^>]*w:right="1474"[^>]*w:bottom="1984"[^>]*w:left="1588"`).test(doc), `top ${expectedTopMargin === "2098" ? 37 : 30} mm, bottom 35, left 28, right 26 mm`);
 check("Document grid", /<w:docGrid[^>]*w:linePitch="560"/.test(doc), "28 pt implementation grid");
+check("No field-update prompt flag", !/w:updateFields w:val="true"/.test(settings), "documents open in Word without the \"update fields\" prompt (page fields compute live)");
 const bodyFontStandard = /w:eastAsia="(?:仿宋|仿宋_GB2312|FangSong|FangSong_GB2312)"/.test(styles);
 const bodyFontAvailable = bodyFontStandard || (!requireStandardFonts && /w:eastAsia="STFangsong"/.test(styles));
 check("Default body font", bodyFontAvailable && /<w:sz w:val="32"/.test(styles), requireStandardFonts ? "3rd-size FangSong is required" : "3rd-size FangSong requested; STFangsong fallback is allowed unless strict mode is enabled");
@@ -244,6 +246,7 @@ if (["formal", "command", "minutes"].includes(profile)) {
   const hasColophon = /抄送：|印发/.test(textOf(doc));
   check("Colophon line thickness model", !hasColophon || (redRules.includes("height:0.35mm") && redRules.includes("height:0.25mm")), "版记粗线0.35 mm、细线0.25 mm");
   if (hasColophon) check("Colophon bottom anchor", /w:vertAnchor="margin"[^>]*w:horzAnchor="margin"[^>]*w:tblpYSpec="bottom"/.test(doc), "版记浮动表锚定在最后一页版心底部且禁止重叠");
+  if (hasColophon) check("Colophon separator lines are black", (doc.match(/fillcolor="#000000"/g) ?? []).length >= 2 && !/fillcolor="#FF0000"/.test(doc), "版记分隔线为黑色（GB/T 9704-2012 7.4；红色仅用于版头）");
   if (/抄送：/.test(textOf(doc))) check("Colophon continuation indent", /w:firstLine="-960"[^>]*w:left="1280"/.test(doc), "抄送回行与冒号后的首字对齐");
   if (hasColophon) check("Colophon print-row right tab", /w:tab w:val="right"/.test(doc), "印发机关和日期使用右制表位");
 }
