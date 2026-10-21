@@ -710,7 +710,8 @@ function parseMarkdown(md) {
       continue;
     }
     const ordered = trimmed.match(/^(\d+[.．、])\s*(.+)$/);
-    if (ordered) {
+    // 日期型行首（如 2013.09—2016.06）不是有序列表序号，保留原文
+    if (ordered && !/^\d{4}[.．]\d{1,2}/.test(trimmed)) {
       flush();
       blocks.push({ type: "paragraph", text: `${ordered[1]} ${ordered[2].trim()}` });
       i += 1;
@@ -770,7 +771,10 @@ function isSecondLayerHeadingText(text) {
 }
 
 function isThirdLayerHeadingText(text) {
-  return /^\d+[.．]/.test(String(text ?? "").trim());
+  const t = String(text ?? "").trim();
+  // 日期型行首（如 2013.09—2016.06）不是三级标题序号
+  if (/^\d{4}[.．]\d{1,2}([.．]\d{1,2})?(\s|[—\-–至])/.test(t)) return false;
+  return /^\d+[.．]/.test(t);
 }
 
 function isFourthLayerHeadingText(text) {

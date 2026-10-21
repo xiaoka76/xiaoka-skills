@@ -105,7 +105,7 @@ const textOf = (xml) => xml.replace(/<[^>]+>/g, "");
 const headingRules = [
   [/^[一二三四五六七八九十百]+、/, "Heading1", /(?:黑体|SimHei|Heiti SC|STHeiti)/],
   [/^（[一二三四五六七八九十百]+）/, "Heading2", /(?:楷体|楷体_GB2312|KaiTi|KaiTi_GB2312|Kaiti SC|STKaiti)/],
-  [/^\d+[.．]/, "Heading3", /(?:仿宋|仿宋_GB2312|FangSong|FangSong_GB2312|STFangsong)/],
+  [/^(?!\d{4}[.．]\d{1,2})\d+[.．]/, "Heading3", /(?:仿宋|仿宋_GB2312|FangSong|FangSong_GB2312|STFangsong)/],
   [/^（\d+）/, "Heading4", /(?:仿宋|仿宋_GB2312|FangSong|FangSong_GB2312|STFangsong)/],
 ];
 for (const [pattern, style, font] of headingRules) {
