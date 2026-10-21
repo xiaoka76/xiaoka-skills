@@ -772,8 +772,8 @@ function isSecondLayerHeadingText(text) {
 
 function isThirdLayerHeadingText(text) {
   const t = String(text ?? "").trim();
-  // 日期型行首（如 2013.09—2016.06）不是三级标题序号
-  if (/^\d{4}[.．]\d{1,2}([.．]\d{1,2})?(\s|[—\-–至])/.test(t)) return false;
+  // 日期型行首（如 2013.09—2016.06，或单独成行的 2013.09）不是三级标题序号
+  if (/^\d{4}[.．]\d{1,2}/.test(t)) return false;
   return /^\d+[.．]/.test(t);
 }
 
