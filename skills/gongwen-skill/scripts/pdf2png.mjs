@@ -105,10 +105,12 @@ function clearPreviousPages(prefix) {
     const suffix = name.startsWith(`${base}-`) ? name.slice(base.length) : "";
     if (!/^-\d+\.png$/.test(suffix)) continue;
     const target = path.join(dir, name);
-    // Only unlink regular files: a directory with that name must not make the
-    // whole run crash before rendering starts.
     try {
-      if (fs.statSync(target).isFile()) fs.rmSync(target, { force: true });
+      // Regular files are stale output. Symlinks are unlinked as well: writing
+      // through `<prefix>-N.png` pointing outside the output directory would
+      // put a page somewhere the caller never asked for.
+      const stat = fs.lstatSync(target);
+      if (stat.isFile() || stat.isSymbolicLink()) fs.rmSync(target, { force: true });
     } catch {
       // ignore unreadable entries; recording will fail later with a clear error
     }
