@@ -95,7 +95,7 @@ gen --input samples/formal.md --output formal-preprinted.docx --format formal \
 verify --input formal-preprinted.docx --profile formal --letterhead preprinted
 
 if [ "$HAS_PDF" = true ]; then
-  PNG_FAILED=0
+  FAILED=0
   for f in ordinary formal-digital formal-preprinted; do
     echo "==> 转换 $f"
     for attempt in 1 2 3; do
@@ -104,17 +104,18 @@ if [ "$HAS_PDF" = true ]; then
       sleep 2
     done
     if [ ! -s "$f.pdf" ]; then
-      echo "警告：$f.docx 转 PDF 失败（可手工用 Word/WPS 打开核对）" >&2
+      echo "FAIL：$f.docx 未能转成 PDF（可手工用 Word/WPS 打开核对）" >&2
+      FAILED=$((FAILED + 1))
       continue
     fi
     if ! pdf2png --input "$f.pdf" --prefix "$f" --dpi 110; then
       echo "FAIL：$f.pdf 未能转成 PNG" >&2
-      PNG_FAILED=$((PNG_FAILED + 1))
+      FAILED=$((FAILED + 1))
     fi
   done
   echo ""
-  if [ "$PNG_FAILED" -gt 0 ]; then
-    echo "失败：$PNG_FAILED 份 PDF 未能转成 PNG（见上方错误），视觉核验未完成。" >&2
+  if [ "$FAILED" -gt 0 ]; then
+    echo "失败：$FAILED 项未能完成（见上方错误），视觉核验未完成。" >&2
     exit 1
   fi
   echo "完成。请逐页核对 $OUT 下的 PNG："

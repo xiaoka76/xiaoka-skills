@@ -90,7 +90,8 @@ function builtinAvailable() {
 }
 
 // Removes previous output for this prefix so a failed or shorter run cannot
-// leave older pages behind (they would be mistaken for current output).
+// leave older pages behind. Only `<prefix>-<number>.png` is touched: other
+// files that merely share the prefix (e.g. `report-draft.png`) are user data.
 function clearPreviousPages(prefix) {
   const dir = path.dirname(prefix);
   const base = path.basename(prefix);
@@ -101,7 +102,8 @@ function clearPreviousPages(prefix) {
     return;
   }
   for (const name of names) {
-    if (name.startsWith(`${base}-`) && name.endsWith(".png")) fs.rmSync(path.join(dir, name), { force: true });
+    const suffix = name.startsWith(`${base}-`) ? name.slice(base.length) : "";
+    if (/^-\d+\.png$/.test(suffix)) fs.rmSync(path.join(dir, name), { force: true });
   }
 }
 
@@ -192,6 +194,7 @@ try {
   }
 } catch (error) {
   if (engine === "auto") {
+    console.error(`PDF2PNG: builtin engine failed (${error.message}), falling back to poppler`);
     clearPreviousPages(prefix);
     try {
       actualEngine = "poppler";

@@ -6,6 +6,7 @@
 // After writing, the archive is read back and verified; every --require entry
 // must be present, so a partial package fails loudly instead of shipping.
 
+import fs from "node:fs";
 import { writeZipFromDir, openZip } from "./zip.mjs";
 
 const argv = process.argv.slice(2);
@@ -38,6 +39,8 @@ const pkg = openZip(output);
 pkg.verify();
 const missing = required.filter((entry) => !pkg.names.includes(entry));
 if (missing.length) {
+  // Never leave a package that looks importable but lacks required entries.
+  fs.rmSync(output, { force: true });
   console.error(`pack_zip: archive is missing required entries: ${missing.join(", ")}`);
   process.exit(1);
 }

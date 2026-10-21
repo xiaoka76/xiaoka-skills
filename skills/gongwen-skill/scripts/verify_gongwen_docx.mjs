@@ -43,13 +43,19 @@ try {
 }
 const readPart = (part, optional = false) => pkg.read(part, optional);
 
-const doc = readPart("word/document.xml");
-const styles = readPart("word/styles.xml");
-const footerOdd = readPart("word/footerOdd.xml", true);
-const footerEven = readPart("word/footerEven.xml", true);
-const footerCenter = readPart("word/footerCenter.xml", true);
-const footerLetter = readPart("word/footerLetter.xml", true);
-const settings = readPart("word/settings.xml", true);
+let doc, styles, footerOdd, footerEven, footerCenter, footerLetter, settings;
+try {
+  doc = readPart("word/document.xml");
+  styles = readPart("word/styles.xml");
+  footerOdd = readPart("word/footerOdd.xml", true);
+  footerEven = readPart("word/footerEven.xml", true);
+  footerCenter = readPart("word/footerCenter.xml", true);
+  footerLetter = readPart("word/footerLetter.xml", true);
+  settings = readPart("word/settings.xml", true);
+} catch (error) {
+  console.error(`FAIL  Package integrity: ${error.message}`);
+  process.exit(1);
+}
 const requireStandardFonts = args["require-standard-fonts"] === true;
 const installedFonts = (() => {
   try {

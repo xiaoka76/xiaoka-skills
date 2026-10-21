@@ -37,7 +37,9 @@ function dosTimestamp() {
   if (epoch !== undefined && epoch !== "") {
     const seconds = Number(epoch);
     if (!Number.isFinite(seconds) || seconds < 0) throw new Error("SOURCE_DATE_EPOCH must be a non-negative number");
-    const date = new Date(seconds * 1000);
+    // DOS time cannot represent anything before 1980; clamp instead of wrapping
+    // the 7-bit year field into 2098.
+    const date = new Date(Math.max(seconds, 315532800) * 1000); // 1980-01-01T00:00:00Z
     fields = [date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds()];
   } else {
     const date = new Date();
@@ -105,7 +107,9 @@ export function writeZipFromDir(srcDir, output) {
     if (a.startsWith("[") !== b.startsWith("[")) return a.startsWith("[") ? -1 : 1;
     return a < b ? -1 : a > b ? 1 : 0;
   });
-  if (names.length > MAX_ENTRIES) throw new Error(`ZIP32 limit: ${names.length} entries (max ${MAX_ENTRIES})`);
+  // 0xffff is reserved as the ZIP64 sentinel in the EOCD entry count, so a
+  // ZIP32 archive can hold at most 65534 entries.
+  if (names.length > MAX_ENTRIES - 1) throw new Error(`ZIP32 limit: ${names.length} entries (max ${MAX_ENTRIES - 1})`);
   if (new Set(names).size !== names.length) throw new Error("duplicate entry names in source directory");
 
   const fd = fs.openSync(output, "w");
@@ -151,9 +155,19 @@ export function writeZipFromDir(srcDir, output) {
     eocd.writeUInt32LE(centralStart, 16);
     eocd.writeUInt16LE(0, 20); // comment length
     fs.writeSync(fd, eocd);
-  } finally {
+  } catch (error) {
+    // Streaming writes are not atomic: never leave a truncated archive behind.
+    // Only unlink a regular file, so an odd output path (e.g. /dev/full) is not
+    // destroyed while cleaning up.
     fs.closeSync(fd);
+    try {
+      if (fs.statSync(output).isFile()) fs.rmSync(output, { force: true });
+    } catch {
+      // best effort: the original error is the useful one
+    }
+    throw error;
   }
+  fs.closeSync(fd);
 }
 
 function findEndOfCentralDirectory(buf) {

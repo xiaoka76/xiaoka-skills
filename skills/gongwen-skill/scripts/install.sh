@@ -71,10 +71,11 @@ install_link() {
 }
 
 package_traework() {
-  local stage output
+  local output
   command -v node >/dev/null || { printf '缺少依赖：node（打包需要 Node.js）\n' >&2; exit 2; }
+  # stage 必须是全局变量：EXIT trap 在函数返回后才会执行，local 变量届时已不在作用域
   stage=$(mktemp -d "${TMPDIR:-/tmp}/gongwen-traework.XXXXXX")
-  trap 'rm -rf "$stage"' EXIT
+  trap 'if [ -n "${stage:-}" ]; then rm -rf "$stage"; fi' EXIT
   output="$skill_dir/dist/traework-gongwen-skill.zip"
   mkdir -p "$skill_dir/dist" "$stage/gongwen"
   # vendor/ 是 PDF→PNG 的内置引擎，LICENSE 是分发所必需，二者都不能漏
@@ -87,6 +88,7 @@ package_traework() {
     --require gongwen/vendor/pdfium/index.esm.js \
     --require gongwen/vendor/pdfium/LICENSE-PDFIUM.txt
   rm -rf "$stage"
+  stage=""
   trap - EXIT
   printf 'Packaged TraeWork import ZIP: %s\n' "$output"
 }
