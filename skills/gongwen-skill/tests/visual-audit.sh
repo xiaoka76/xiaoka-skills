@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # 全场景视觉核验：生成 ordinary / formal-digital / formal-preprinted 样例，
 # 转 PDF、逐页转 PNG，供人工按 GB/T 9704-2012 截图核对。
+# 只有 node 是硬依赖；PDF→PNG 由内置 PDFium 渲染器完成，不需要 poppler。
+# 缺少 LibreOffice 时自动跳过 PDF、PNG 阶段，仍完成生成与版式校验。
+# 可用 SOFFICE=/path/to/soffice 指定可执行文件。
 # 用法：bash tests/visual-audit.sh [输出目录]
 set -euo pipefail
 
@@ -8,10 +11,19 @@ OUT="${1:-/tmp/gongwen-visual-audit}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GEN="node ${SCRIPT_DIR}/../scripts/generate_gongwen_docx.mjs"
 VERIFY="node ${SCRIPT_DIR}/../scripts/verify_gongwen_docx.mjs"
+PDF2PNG="node ${SCRIPT_DIR}/../scripts/pdf2png.mjs"
 
-for bin in node soffice pdftoppm; do
-  command -v "$bin" >/dev/null || { echo "缺少依赖：$bin" >&2; exit 1; }
-done
+command -v node >/dev/null || { echo "缺少依赖：node" >&2; exit 1; }
+
+SOFFICE="${SOFFICE:-soffice}"
+HAS_PDF=false
+if command -v "$SOFFICE" >/dev/null 2>&1; then
+  HAS_PDF=true
+else
+  echo "提示：未找到 ${SOFFICE}，跳过 docx→PDF 环节，仅生成 DOCX 并做版式校验。" >&2
+  echo "      请用 Word/WPS 打开生成的 DOCX，另存或导出为 PDF 后回传，再做逐页目视核对。" >&2
+  echo "      或用 SOFFICE=/path/to/soffice 指定 LibreOffice 可执行文件。" >&2
+fi
 
 mkdir -p "$OUT/samples"
 cd "$OUT"
@@ -82,26 +94,32 @@ $GEN --input samples/formal.md --output formal-preprinted.docx --format formal \
   --print-date "2025年7月12日印发"
 $VERIFY --input formal-preprinted.docx --profile formal --letterhead preprinted
 
-for f in ordinary formal-digital formal-preprinted; do
-  echo "==> 转换 $f"
-  for attempt in 1 2 3; do
-    soffice --headless --convert-to pdf --outdir . "$f.docx" >/dev/null 2>&1 || true
-    [ -s "$f.pdf" ] && break
-    sleep 2
+if [ "$HAS_PDF" = true ]; then
+  for f in ordinary formal-digital formal-preprinted; do
+    echo "==> 转换 $f"
+    for attempt in 1 2 3; do
+      "$SOFFICE" --headless --convert-to pdf --outdir . "$f.docx" >/dev/null 2>&1 || true
+      [ -s "$f.pdf" ] && break
+      sleep 2
+    done
+    if [ ! -s "$f.pdf" ]; then
+      echo "警告：$f.docx 转 PDF 失败（可手工用 Word/WPS 打开核对）" >&2
+      continue
+    fi
+    $PDF2PNG --input "$f.pdf" --prefix "$f" --dpi 110 || echo "警告：$f.pdf 转 PNG 失败" >&2
   done
-  if [ ! -s "$f.pdf" ]; then
-    echo "警告：$f.docx 转 PDF 失败（可手工用 Word/WPS 打开核对）" >&2
-    continue
-  fi
-  pdftoppm -png -r 110 "$f.pdf" "$f"
-done
-
-echo ""
-echo "完成。请逐页核对 $OUT 下的 PNG："
-echo "  - 标题字体/折行、三级层次字体（黑体/楷体/仿宋）"
-echo "  - 连续 1.2.3. 条目跨页时页底不应出现异常大空白"
-echo "  - 页码：默认奇右偶左（单页右空一字、双页左空一字），数字为宋体（非 Times New Roman）"
-echo "  - 落款：日期右空四字、署名与其居中对齐"
-echo "  - 版记（抄送/印发）以浮动表锚定版心底部；注意 LibreOffice"
-echo "    可能不渲染该浮动表，需在 Word/WPS 中最终确认。"
-ls -1 "$OUT"/*.png 2>/dev/null || true
+  echo ""
+  echo "完成。请逐页核对 $OUT 下的 PNG："
+  echo "  - 标题字体/折行、三级层次字体（黑体/楷体/仿宋）"
+  echo "  - 连续 1.2.3. 条目跨页时页底不应出现异常大空白"
+  echo "  - 页码：默认奇右偶左（单页右空一字、双页左空一字），数字为宋体（非 Times New Roman）"
+  echo "  - 落款：日期右空四字、署名与其居中对齐"
+  echo "  - 版记（抄送/印发）以浮动表锚定版心底部；注意 LibreOffice"
+  echo "    可能不渲染该浮动表，需在 Word/WPS 中最终确认。"
+  ls -1 "$OUT"/*.png 2>/dev/null || true
+else
+  echo ""
+  echo "完成（已跳过 PDF/PNG）。DOCX 与版式校验结果在 $OUT："
+  ls -1 "$OUT"/*.docx 2>/dev/null || true
+  echo "下一步：请用 Word/WPS 打开上述 DOCX 导出 PDF 回传，再做逐页目视核对。"
+fi

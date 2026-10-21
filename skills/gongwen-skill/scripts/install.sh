@@ -77,8 +77,7 @@ package_traework() {
   mkdir -p "$skill_dir/dist" "$stage/gongwen"
   cp -R "$skill_dir/SKILL.md" "$skill_dir/scripts" "$skill_dir/references" "$skill_dir/tests" "$stage/gongwen/"
   rm -f "$output"
-  (cd "$stage" && zip -qr "$output" gongwen)
-  unzip -t "$output" >/dev/null
+  node "$skill_dir/scripts/pack_zip.mjs" "$stage" "$output"
   rm -rf "$stage"
   printf 'Packaged TraeWork import ZIP: %s\n' "$output"
 }

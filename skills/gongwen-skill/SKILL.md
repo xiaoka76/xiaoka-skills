@@ -5,11 +5,11 @@ display_name_en: Gongwen Document Formatting
 description: 把中文正式材料整理成可直接交付的公文 DOCX：按 GB/T 9704-2012 处理版心、字体、标题层级、文号、页码、附件与版记；普通稿不误用红头，正式发文支持预印红头纸套打或完整电子红头，并保留 Word/WPS 可更新目录。
 description_zh: 按 GB/T 9704-2012 将中文正式材料整理为可直接交付的公文 DOCX，覆盖版心、字体、标题层级、文号、页码、附件、版记及预印红头纸套打，并保留 Word/WPS 可更新目录。
 description_en: Generate Chinese official DOCX under GB/T 9704-2012 with page layout, typography, headings, document numbers, page numbers, attachments, colophon, preprinted letterhead, and Word/WPS TOC support.
-version: 2.0.0
+version: 2.1.0
 author: 谁是专家
 ---
 
-> **来源**：本技能复制自 [mizzlelover/gongwen-gbt9704-skill](https://github.com/mizzlelover/gongwen-gbt9704-skill)（作者「谁是专家」，MIT License，Copyright © 2026 mizzlelover，见同目录 [LICENSE](LICENSE)），快照 v2.0.0（2026-10-11 纳入本仓库）。本副本仅将技能名改为 `gongwen-skill` 并添加本说明，其余内容与原版一致。
+> **来源**：本技能复制自 [mizzlelover/gongwen-gbt9704-skill](https://github.com/mizzlelover/gongwen-gbt9704-skill)（作者「谁是专家」，MIT License，Copyright © 2026 mizzlelover，见同目录 [LICENSE](LICENSE)），快照 v2.0.0（2026-10-11 纳入本仓库）。本副本的改动：技能名改为 `gongwen-skill`；DOCX 打包与读包改用内置 `scripts/zip.mjs`（基于 Node 自带 `node:zlib`），不再依赖外部 `zip`/`unzip`；PDF→PNG 改用内置 `scripts/pdf2png.mjs` 与 `vendor/pdfium`（PDFium WebAssembly，BSD-3-Clause），不再依赖 poppler；其余内容与原版一致。
 
 # 公文版式工具
 
@@ -58,18 +58,44 @@ Markdown 标题优先按序数识别：`一、`、`（一）`、`1.`、`（1）`
 ## 验证
 
 ```bash
-unzip -t output.docx
+# 以下 PDF/PNG 步骤为可选，只有 docx→PDF 需要 LibreOffice；缺失时跳过不影响生成与校验
 soffice --headless --convert-to pdf --outdir /tmp output.docx
 node scripts/verify_gongwen_docx.mjs --input output.docx --profile formal --letterhead preprinted
 # 目标电脑必须装有标准小标宋体和仿宋体时，再加严格字体校验
 node scripts/verify_gongwen_docx.mjs --input output.docx --profile formal --letterhead digital --require-standard-fonts
+# PDF 逐页转 PNG（内置 PDFium，不需要 poppler），供目视或截图核对
+node scripts/pdf2png.mjs --input /tmp/output.pdf --prefix /tmp/output --dpi 110
 # 逐场景生成 DOCX、PDF 和 PNG，人工按截图核对版式
 bash tests/visual-audit.sh /tmp/gongwen-visual-audit
 ```
 
+校验器会先按 CRC 逐部件校验 DOCX 包完整性（等同于 `unzip -t`），再核对版式要素。
+
+`pdf2png.mjs` 内置 PDFium 的 WebAssembly 构建（`vendor/pdfium/`，与 Chrome 同一渲染引擎），任何平台只要有 Node 就能把 PDF 转成 PNG，不需要安装 poppler；`--engine poppler` 可改用系统的 `pdftoppm`，`--dpi` 默认 110。
+
 全条款视觉证据和未自动化边界见[GB/T 9704-2012 全条款视觉核验记录](references/gbt9704-visual-audit.md)和[全条款截图证据矩阵](references/gbt9704-screenshot-evidence.md)。横排表格的单双页表头方向、实体印章、纸张和装订不能只由 DOCX 生成器证明。
 
 校验器核验生成器可检查的版式要素，并按 `ordinary`、`formal`、`letter`、`command`、`minutes`、`horizontal-table` 选择校验档案，包括页码 PAGE 域数字必须为宋体系字体（不能是 Times New Roman）。输出后仍须在目标 Word/WPS 与实际打印条件下检查首页正文、分页、附件、表格、页码、红头纸套打和装订。已知渲染差异：版记（抄送、印发机关和日期）以浮动表锚定最后一页版心底部，**LibreOffice 转 PDF 时可能不显示该浮动表**，Word/WPS 正常；因此看到 PDF 里版记缺失时，以 Word/WPS 实际打开效果为准。
+
+## 没有 LibreOffice 时：向用户索取 PDF 再核验
+
+生成和结构校验只需要 Node；只有“转成 PDF 看效果”需要 LibreOffice。当系统里找不到 `soffice` 命令，或 `bash tests/visual-audit.sh` 提示“已跳过 PDF/PNG”时，按下面处理：
+
+1. 先照常完成生成与结构校验，把校验器的 PASS/FAIL 结果如实汇报，**不要因为不能转 PDF 就中断整个流程**。
+2. 主动提示用户：本机没有 LibreOffice，无法自动把 DOCX 转成 PDF；请用 Word 或 WPS 打开这份 DOCX，另存或导出为 PDF 后回传。
+3. 收到 PDF 后先用内置渲染器转成图片，再逐页核对：
+   ```bash
+   node scripts/pdf2png.mjs --input 用户回传的.pdf --prefix /tmp/check --dpi 110
+   ```
+   重点项：
+   - 版头：份号、密级、紧急程度、机关标志上边缘距版心顶 35 mm、文号位置、红色分隔线在文号下 4 mm；
+   - 标题：二号小标宋、折行有无孤字行、标题下空二行；
+   - 层次：一级黑体、二级楷体、三级及以下仿宋，正文首行缩进二字、回行顶格；
+   - 页码：单页居右、双页居左，4 号宋体数字，距版心下边缘 7 mm；
+   - 版记：锚定最后一页版心底部，分隔线为黑色；
+   - 附件：另页起排，附件序号与标题位置正确，页码连续。
+4. 结论里注明“本机未做 PDF 渲染，版式依据用户回传的 PDF 核对”。Word/WPS 导出的 PDF 比 LibreOffice 预览更接近最终交付效果，但不能替代实体打印和装订检查。
+5. 用户无法提供 PDF 时，只报告结构校验结论，并明确写“未做目视核验”，不要凭空描述版面效果。
 
 ## 输出说明
 

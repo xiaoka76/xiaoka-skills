@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { openZip } from "./zip.mjs";
 
 function usage() {
   console.log("Usage: node verify_gongwen_docx.mjs --input file.docx [--profile ordinary|formal|letter|command|minutes|horizontal-table] [--letterhead preprinted|digital] [--require-standard-fonts]");
@@ -25,11 +26,6 @@ function parseArgs(argv) {
   return args;
 }
 
-function readPart(file, part, optional = false) {
-  try { return execFileSync("unzip", ["-p", file, part], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); }
-  catch (error) { if (optional) return ""; throw error; }
-}
-
 function paragraphs(xml) { return xml.match(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g) ?? []; }
 
 const args = parseArgs(process.argv);
@@ -37,13 +33,22 @@ if (!args.input || !fs.existsSync(args.input)) { usage(); process.exit(2); }
 const profile = args.profile ?? "ordinary";
 if (!["ordinary", "formal", "letter", "command", "minutes", "horizontal-table"].includes(profile)) { console.error("Unsupported profile."); process.exit(2); }
 
-const doc = readPart(args.input, "word/document.xml");
-const styles = readPart(args.input, "word/styles.xml");
-const footerOdd = readPart(args.input, "word/footerOdd.xml", true);
-const footerEven = readPart(args.input, "word/footerEven.xml", true);
-const footerCenter = readPart(args.input, "word/footerCenter.xml", true);
-const footerLetter = readPart(args.input, "word/footerLetter.xml", true);
-const settings = readPart(args.input, "word/settings.xml", true);
+const pkg = openZip(args.input);
+try {
+  pkg.verify(); // unzip -t equivalent: every part's size and CRC must match
+} catch (error) {
+  console.error(`FAIL  Package integrity: ${error.message}`);
+  process.exit(1);
+}
+const readPart = (part, optional = false) => pkg.read(part, optional);
+
+const doc = readPart("word/document.xml");
+const styles = readPart("word/styles.xml");
+const footerOdd = readPart("word/footerOdd.xml", true);
+const footerEven = readPart("word/footerEven.xml", true);
+const footerCenter = readPart("word/footerCenter.xml", true);
+const footerLetter = readPart("word/footerLetter.xml", true);
+const settings = readPart("word/settings.xml", true);
 const requireStandardFonts = args["require-standard-fonts"] === true;
 const installedFonts = (() => {
   try {

@@ -139,7 +139,7 @@ seedream mark ./photo.png --box 980,640,1180,860 --plain -o ./marked.png
 - 联合行文（`--joint-org`）、分离装订附件（`--attachment-detached`）、版记（抄送 / 印发）、单双页页码、Word/WPS 可更新目录
 - 内置独立校验器；文号与日期写法有合法性拦截，输出后可直接自检
 
-**快速开始：**（需要 Node.js 与本机 `zip` / `unzip`；输出完全保真需目标机装有方正小标宋 + 仿宋系字体，缺失时会明确警告并替代）
+**快速开始：**（只需 Node.js：DOCX 打包与 PDF→PNG 均已内置，无需 `zip` / `unzip` / poppler；输出完全保真需目标机装有方正小标宋 + 仿宋系字体，缺失时会明确警告并替代）
 
 ```bash
 # 进入技能目录

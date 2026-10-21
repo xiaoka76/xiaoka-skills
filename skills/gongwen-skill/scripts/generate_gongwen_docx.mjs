@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
+import { writeZipFromDir } from "./zip.mjs";
 
 const PAGE_W = 11906;
 const PAGE_H = 16838;
@@ -134,7 +135,7 @@ Notes:
   - --org and --doc-no are printed as supplied after boundary validation. The tool formats document content; it does not infer missing information or decide the document's use.
   - The generator reports when the required small-standard-title or FangSong font is unavailable and uses a visible fallback. Add --require-standard-fonts to refuse generation until the required font is installed.
   - Supports headings, paragraphs, ordered/unordered lines, pipe tables, and repeatable Markdown attachment pages via --attachment-file. The colophon is anchored to the bottom of the final page's type area.
-  - No npm dependencies; requires zip in PATH.`);
+  - No npm dependencies and no external zip binary; the package is written with Node's built-in zlib.`);
 }
 
 function parseArgs(argv) {
@@ -1127,7 +1128,7 @@ function writeDocx(output, documentXml, pageNumberMode, format) {
     fs.writeFileSync(path.join(dir, "word/footerCenter.xml"), footerXml("center"));
   }
   fs.rmSync(output, { force: true });
-  execFileSync("zip", ["-qr", output, "."], { cwd: dir });
+  writeZipFromDir(dir, output);
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
