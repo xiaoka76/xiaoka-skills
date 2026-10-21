@@ -37,9 +37,10 @@ function dosTimestamp() {
   if (epoch !== undefined && epoch !== "") {
     const seconds = Number(epoch);
     if (!Number.isFinite(seconds) || seconds < 0) throw new Error("SOURCE_DATE_EPOCH must be a non-negative number");
-    // DOS time cannot represent anything before 1980; clamp instead of wrapping
-    // the 7-bit year field into 2098.
-    const date = new Date(Math.max(seconds, 315532800) * 1000); // 1980-01-01T00:00:00Z
+    // DOS time cannot represent anything before 1980 or after 2107-12-31
+    // 23:59:58; clamp instead of letting the 7-bit year field wrap.
+    const epochSeconds = Math.min(Math.max(seconds, 315532800), 4354819198);
+    const date = new Date(epochSeconds * 1000);
     fields = [date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds()];
   } else {
     const date = new Date();

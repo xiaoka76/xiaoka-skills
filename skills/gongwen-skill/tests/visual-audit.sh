@@ -98,6 +98,8 @@ if [ "$HAS_PDF" = true ]; then
   FAILED=0
   for f in ordinary formal-digital formal-preprinted; do
     echo "==> 转换 $f"
+    # 复用输出目录时，上一轮的 PDF 会掩盖本次转换失败，必须先把旧文件清掉
+    rm -f "$f.pdf"
     for attempt in 1 2 3; do
       "$SOFFICE" --headless --convert-to pdf --outdir . "$f.docx" >/dev/null 2>&1 || true
       [ -s "$f.pdf" ] && break
