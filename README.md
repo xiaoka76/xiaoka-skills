@@ -130,7 +130,7 @@ seedream mark ./photo.png --box 980,640,1180,860 --plain -o ./marked.png
 
 按《党政机关公文格式》（GB/T 9704-2012）把中文正式材料生成可直接交付的公文 DOCX：版心、字体、标题层级、文号、页码、附件、版记，支持**预印红头纸套打 / 完整电子红头**、联合行文，以及信函 / 命令（令）/ 纪要 / 横排表格四种专门版式。
 
-> 本技能复制自上游开源项目 [mizzlelover/gongwen-gbt9704-skill](https://github.com/mizzlelover/gongwen-gbt9704-skill)（MIT License，Copyright © 2026 mizzlelover），快照 v2.0.0；本副本仅改名为 `gongwen-skill` 并注明来源，其余内容与原版一致。
+> 本技能复制自上游开源项目 [mizzlelover/gongwen-gbt9704-skill](https://github.com/mizzlelover/gongwen-gbt9704-skill)（MIT License，Copyright © 2026 mizzlelover），快照 v2.0.0；本副本改名为 `gongwen-skill`，并将 DOCX 打包/读包与 PDF→PNG 改为内置实现（`scripts/zip.mjs`、`scripts/pdf2png.mjs` + `vendor/pdfium`），排版逻辑与原版一致。
 
 **核心能力：**
 - 普通稿（`ordinary`）：A4、156mm×225mm 版心、三号仿宋正文、小标宋二号标题、四级标题层次
@@ -139,7 +139,7 @@ seedream mark ./photo.png --box 980,640,1180,860 --plain -o ./marked.png
 - 联合行文（`--joint-org`）、分离装订附件（`--attachment-detached`）、版记（抄送 / 印发）、单双页页码、Word/WPS 可更新目录
 - 内置独立校验器；文号与日期写法有合法性拦截，输出后可直接自检
 
-**快速开始：**（只需 Node.js：DOCX 打包与 PDF→PNG 均已内置，无需 `zip` / `unzip` / poppler；输出完全保真需目标机装有方正小标宋 + 仿宋系字体，缺失时会明确警告并替代）
+**快速开始：**（生成与校验只需 Node.js ≥18，无需 `zip` / `unzip`；PDF→PNG 已内置，docx→PDF 仍需 LibreOffice；输出完全保真需目标机装有方正小标宋 + 仿宋系字体，缺失时会明确警告并替代）
 
 ```bash
 # 进入技能目录

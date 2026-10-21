@@ -33,9 +33,10 @@ if (!args.input || !fs.existsSync(args.input)) { usage(); process.exit(2); }
 const profile = args.profile ?? "ordinary";
 if (!["ordinary", "formal", "letter", "command", "minutes", "horizontal-table"].includes(profile)) { console.error("Unsupported profile."); process.exit(2); }
 
-const pkg = openZip(args.input);
+let pkg;
 try {
-  pkg.verify(); // unzip -t equivalent: every part's size and CRC must match
+  pkg = openZip(args.input);
+  pkg.verify(); // integrity: local headers, sizes and CRCs for every part
 } catch (error) {
   console.error(`FAIL  Package integrity: ${error.message}`);
   process.exit(1);

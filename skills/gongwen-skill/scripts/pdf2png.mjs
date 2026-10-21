@@ -15,6 +15,7 @@ import { crc32 } from "./zip.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VENDOR = path.join(HERE, "..", "vendor", "pdfium");
+const KNOWN_OPTIONS = new Set(["input", "prefix", "outdir", "dpi", "engine", "help"]);
 
 function usage() {
   console.log(`Usage:
@@ -22,22 +23,35 @@ function usage() {
 
 Notes:
   - Writes <prefix>-1.png, <prefix>-2.png ... one file per page.
+  - <prefix> is resolved against --outdir; an absolute prefix overrides it.
   - builtin engine uses the bundled PDFium WebAssembly build; no poppler, no LibreOffice.
   - poppler engine uses pdftoppm from poppler-utils when it is installed.
-  - --engine auto (default) uses builtin when vendor/pdfium exists, otherwise poppler.`);
+  - --engine auto (default) uses builtin when vendor/pdfium exists, otherwise poppler.
+  - Existing <prefix>-*.png files are removed first, so stale pages never leak into results.`);
 }
 
 function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i += 1) {
-    const key = argv[i];
-    if (!key.startsWith("--")) continue;
-    const name = key.slice(2);
-    if (name === "help") { args.help = true; continue; }
-    const value = argv[i + 1];
-    if (value === undefined || value.startsWith("--")) throw new Error(`--${name} requires a value`);
+    const raw = argv[i];
+    if (!raw.startsWith("--")) continue;
+    const eq = raw.indexOf("=");
+    const name = eq === -1 ? raw.slice(2) : raw.slice(2, eq);
+    if (!KNOWN_OPTIONS.has(name)) throw new Error(`unknown option: --${name}`);
+    if (name === "help") {
+      args.help = true;
+      continue;
+    }
+    let value;
+    if (eq !== -1) {
+      value = raw.slice(eq + 1);
+    } else {
+      value = argv[i + 1];
+      if (value === undefined || value.startsWith("--")) throw new Error(`--${name} requires a value`);
+      i += 1;
+    }
+    if (value === "") throw new Error(`--${name} requires a value`);
     args[name] = value;
-    i += 1;
   }
   return args;
 }
@@ -75,28 +89,46 @@ function builtinAvailable() {
   return fs.existsSync(path.join(VENDOR, "index.esm.js")) && fs.existsSync(path.join(VENDOR, "pdfium.wasm"));
 }
 
+// Removes previous output for this prefix so a failed or shorter run cannot
+// leave older pages behind (they would be mistaken for current output).
+function clearPreviousPages(prefix) {
+  const dir = path.dirname(prefix);
+  const base = path.basename(prefix);
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (name.startsWith(`${base}-`) && name.endsWith(".png")) fs.rmSync(path.join(dir, name), { force: true });
+  }
+}
+
 async function renderBuiltin(input, prefix, dpi) {
   if (!builtinAvailable()) throw new Error(`builtin engine unavailable: ${VENDOR}`);
   const { PDFiumLibrary } = await import(pathToFileURL(path.join(VENDOR, "index.esm.js")).href);
   const library = await PDFiumLibrary.init();
-  const document = await library.loadDocument(new Uint8Array(fs.readFileSync(input)));
-  const written = [];
   try {
-    let index = 0;
-    for (const page of document.pages()) {
-      index += 1;
-      // "BGRA" is accepted by PDFium v2 and v3; both return RGBA byte order.
-      const { data, width, height } = await page.render({ scale: dpi / 72, colorSpace: "BGRA" });
-      const output = `${prefix}-${index}.png`;
-      fs.writeFileSync(output, encodePng(width, height, data));
-      written.push(output);
-      if (typeof page.close === "function") page.close();
+    const document = await library.loadDocument(new Uint8Array(fs.readFileSync(input)));
+    try {
+      const written = [];
+      let index = 0;
+      for (const page of document.pages()) {
+        index += 1;
+        // "BGRA" is accepted by PDFium v2 and v3; both return RGBA byte order.
+        const { data, width, height } = await page.render({ scale: dpi / 72, colorSpace: "BGRA" });
+        const output = `${prefix}-${index}.png`;
+        fs.writeFileSync(output, encodePng(width, height, data));
+        written.push(output);
+      }
+      return written;
+    } finally {
+      if (typeof document.destroy === "function") document.destroy();
     }
   } finally {
-    if (typeof document.destroy === "function") document.destroy();
     if (typeof library.destroy === "function") library.destroy();
   }
-  return written;
 }
 
 function renderPoppler(input, prefix, dpi) {
@@ -111,12 +143,18 @@ function renderPoppler(input, prefix, dpi) {
   const base = path.basename(prefix);
   return fs
     .readdirSync(dir)
-    .filter((name) => name.startsWith(`${base}-`) && name.endsWith(".png"))
+    .filter((name) => name.startsWith(`${base}-`) && /^-\d+\.png$/.test(name.slice(base.length)) && name.endsWith(".png"))
     .sort()
     .map((name) => path.join(dir, name));
 }
 
-const args = parseArgs(process.argv);
+let args;
+try {
+  args = parseArgs(process.argv);
+} catch (error) {
+  console.error(`PDF2PNG ERROR: ${error.message}`);
+  process.exit(2);
+}
 if (args.help || !args.input) {
   usage();
   process.exit(args.help ? 0 : 1);
@@ -135,37 +173,45 @@ if (!Number.isFinite(dpi) || dpi <= 0) {
   console.error("PDF2PNG ERROR: --dpi must be a positive number");
   process.exit(2);
 }
+
 const outdir = path.resolve(args.outdir ?? path.dirname(args.input));
-const prefix = path.resolve(args.prefix ?? path.join(outdir, path.basename(args.input, path.extname(args.input))));
+const prefix = path.resolve(outdir, args.prefix ?? path.basename(args.input, path.extname(args.input)));
 fs.mkdirSync(path.dirname(prefix), { recursive: true });
 
 const started = performance.now();
 let files = [];
+let actualEngine = engine;
+clearPreviousPages(prefix);
 try {
   if (engine === "builtin" || (engine === "auto" && builtinAvailable())) {
+    actualEngine = "builtin";
     files = await renderBuiltin(args.input, prefix, dpi);
-  } else if (engine === "poppler") {
-    files = renderPoppler(args.input, prefix, dpi);
   } else {
+    actualEngine = "poppler";
     files = renderPoppler(args.input, prefix, dpi);
   }
 } catch (error) {
   if (engine === "auto") {
+    clearPreviousPages(prefix);
     try {
+      actualEngine = "poppler";
       files = renderPoppler(args.input, prefix, dpi);
     } catch (fallback) {
+      clearPreviousPages(prefix);
       console.error(`PDF2PNG ERROR: no usable engine. builtin=${builtinAvailable() ? "failed" : "absent"}; poppler=${fallback.message}`);
       console.error("  Install poppler-utils, or restore vendor/pdfium (see vendor/pdfium/README.md).");
       process.exit(1);
     }
   } else {
+    clearPreviousPages(prefix);
     console.error(`PDF2PNG ERROR: ${error.message}`);
     process.exit(1);
   }
 }
 if (!files.length) {
+  clearPreviousPages(prefix);
   console.error("PDF2PNG ERROR: no pages rendered");
   process.exit(1);
 }
 for (const file of files) console.log(`${file}  ${(fs.statSync(file).size / 1024).toFixed(0)} KB`);
-console.log(`Rendered ${files.length} page(s) at ${dpi} dpi in ${((performance.now() - started) / 1000).toFixed(2)}s (engine: ${engine === "auto" ? (builtinAvailable() ? "builtin" : "poppler") : engine})`);
+console.log(`Rendered ${files.length} page(s) at ${dpi} dpi in ${((performance.now() - started) / 1000).toFixed(2)}s (engine: ${actualEngine})`);

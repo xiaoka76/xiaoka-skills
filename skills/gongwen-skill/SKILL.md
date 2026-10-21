@@ -69,7 +69,7 @@ node scripts/pdf2png.mjs --input /tmp/output.pdf --prefix /tmp/output --dpi 110
 bash tests/visual-audit.sh /tmp/gongwen-visual-audit
 ```
 
-校验器会先按 CRC 逐部件校验 DOCX 包完整性（等同于 `unzip -t`），再核对版式要素。
+校验器会先读包并逐部件校验长度与 CRC，同时检查本地头与中央目录是否一致（覆盖 `unzip -t` 的主要检查项），再核对版式要素。
 
 `pdf2png.mjs` 内置 PDFium 的 WebAssembly 构建（`vendor/pdfium/`，与 Chrome 同一渲染引擎），任何平台只要有 Node 就能把 PDF 转成 PNG，不需要安装 poppler；`--engine poppler` 可改用系统的 `pdftoppm`，`--dpi` 默认 110。
 

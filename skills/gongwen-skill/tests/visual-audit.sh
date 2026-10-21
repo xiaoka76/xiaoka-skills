@@ -9,9 +9,9 @@ set -euo pipefail
 
 OUT="${1:-/tmp/gongwen-visual-audit}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GEN="node ${SCRIPT_DIR}/../scripts/generate_gongwen_docx.mjs"
-VERIFY="node ${SCRIPT_DIR}/../scripts/verify_gongwen_docx.mjs"
-PDF2PNG="node ${SCRIPT_DIR}/../scripts/pdf2png.mjs"
+gen() { node "$SCRIPT_DIR/../scripts/generate_gongwen_docx.mjs" "$@"; }
+verify() { node "$SCRIPT_DIR/../scripts/verify_gongwen_docx.mjs" "$@"; }
+pdf2png() { node "$SCRIPT_DIR/../scripts/pdf2png.mjs" "$@"; }
 
 command -v node >/dev/null || { echo "缺少依赖：node" >&2; exit 1; }
 
@@ -71,30 +71,31 @@ cat > samples/formal.md <<'EOF'
 EOF
 
 echo "==> 生成 ordinary"
-$GEN --input samples/ordinary.md --output ordinary.docx --format ordinary \
+gen --input samples/ordinary.md --output ordinary.docx --format ordinary \
   --title $'关于2025年上半年重点工作督查督办情况的分析简报' \
   --sender "厅督查室" --date "2025年7月10日" || true
-$VERIFY --input ordinary.docx --profile ordinary
+verify --input ordinary.docx --profile ordinary
 
 echo "==> 生成 formal digital"
-$GEN --input samples/formal.md --output formal-digital.docx --format formal \
+gen --input samples/formal.md --output formal-digital.docx --format formal \
   --letterhead digital --org "XX省XX厅文件" --doc-no "X发〔2025〕12号" \
   --title "XX省XX厅关于加强机关效能建设的通知" \
   --sender "XX省XX厅" --date "2025年7月10日" \
   --cc "各市XX局，厅机关各处室" --print-org "XX省XX厅办公室" \
   --print-date "2025年7月12日印发"
-$VERIFY --input formal-digital.docx --profile formal --letterhead digital
+verify --input formal-digital.docx --profile formal --letterhead digital
 
 echo "==> 生成 formal preprinted"
-$GEN --input samples/formal.md --output formal-preprinted.docx --format formal \
+gen --input samples/formal.md --output formal-preprinted.docx --format formal \
   --letterhead preprinted --doc-no "X发〔2025〕12号" \
   --title "XX省XX厅关于加强机关效能建设的通知" \
   --sender "XX省XX厅" --date "2025年7月10日" \
   --cc "各市XX局，厅机关各处室" --print-org "XX省XX厅办公室" \
   --print-date "2025年7月12日印发"
-$VERIFY --input formal-preprinted.docx --profile formal --letterhead preprinted
+verify --input formal-preprinted.docx --profile formal --letterhead preprinted
 
 if [ "$HAS_PDF" = true ]; then
+  PNG_FAILED=0
   for f in ordinary formal-digital formal-preprinted; do
     echo "==> 转换 $f"
     for attempt in 1 2 3; do
@@ -106,9 +107,16 @@ if [ "$HAS_PDF" = true ]; then
       echo "警告：$f.docx 转 PDF 失败（可手工用 Word/WPS 打开核对）" >&2
       continue
     fi
-    $PDF2PNG --input "$f.pdf" --prefix "$f" --dpi 110 || echo "警告：$f.pdf 转 PNG 失败" >&2
+    if ! pdf2png --input "$f.pdf" --prefix "$f" --dpi 110; then
+      echo "FAIL：$f.pdf 未能转成 PNG" >&2
+      PNG_FAILED=$((PNG_FAILED + 1))
+    fi
   done
   echo ""
+  if [ "$PNG_FAILED" -gt 0 ]; then
+    echo "失败：$PNG_FAILED 份 PDF 未能转成 PNG（见上方错误），视觉核验未完成。" >&2
+    exit 1
+  fi
   echo "完成。请逐页核对 $OUT 下的 PNG："
   echo "  - 标题字体/折行、三级层次字体（黑体/楷体/仿宋）"
   echo "  - 连续 1.2.3. 条目跨页时页底不应出现异常大空白"
